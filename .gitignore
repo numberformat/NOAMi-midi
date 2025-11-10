@@ -18,6 +18,9 @@
 *.idb
 *.tlog/
 *.lastbuildstate
+*.srctrlbm
+*.srctrldb
+*.srctrlprj
 *.log
 
 # Compiler caches

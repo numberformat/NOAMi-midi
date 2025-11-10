@@ -1,13 +1,14 @@
 # NOAMi MIDI Player
 
-NOAMi MIDI Player is a modernized fork of the [TMIDI project](https://grandgent.com/tom/projects/tmidi/). It keeps the lightweight Win32 MIDI playback engine, adds automated builds, and preserves a straightforward toolchain for anyone who wants a lightweight, MIDI player that talks directly to Windows multimedia APIs.
+NOAMi MIDI Player is a lightweight software MIDI router and player that lets you select input and output devices, route live MIDI data, and play MIDI files through any connected device. It is a modernized fork of the [TMIDI project](https://grandgent.com/tom/projects/tmidi/). It keeps the lightweight Win32 MIDI playback engine, adds automated builds, and preserves a straightforward toolchain for anyone who wants a lightweight, MIDI player and router that talks directly to operating system multimedia APIs.
 
 <img src="screenshot.png" data-align="right" data-hspace="0" width="452" height="409" />
 
 ## Capabilities
 
-- Standalone Win32 executable with no runtime dependencies beyond the Windows multimedia stack.
+- Standalone executable with no runtime dependencies beyond the operating system multimedia stack.
 - Plays Standard MIDI Files using direct `winmm` calls, allowing low latency and deterministic channel routing.
+- Take incoming MIDI signal (from a keyboard, controller, etc.) and send them to another output.
 - Provides visual playback controls, track/channel inspectors, and quick access to system-exclusive (SysEx) dumps embedded in a file.
 - Ships with resource-only assets (icons, logos, speech tables) stored under `src/` so the binary can be rebuilt exactly as released.
 
@@ -136,9 +137,30 @@ Artifacts are written to `build/cmake/bin/NOAMi-MIDI.exe`. Swap `Release` for `D
 
 ### Visual Studio (Generated via CMake)
 
-This is untested please let me know if it worked for you.
+```ps1
+# install the build tools using choco
+
+choco install visualstudio2022buildtools --package-parameters "--add Microsoft.VisualStudio.Workload.VCTools --includeRecommended --passive --norestart"
+choco upgrade visualstudio2022buildtools --package-parameters "--add Microsoft.VisualStudio.Component.VC.Tools.x86.x64 --includeRecommended --passive --norestart" --force
+# check to see if its actually installed
+Get-ChildItem "C:\Program Files\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC"
+
+```
+
 ```powershell
 cmake -S . -B build/vs -G "Visual Studio 17 2022"
+PS C:\Users\numbe\Downloads\NOAMi-midi> cmake -S . -B build/vs -G "Visual Studio 17 2022"
+-- Selecting Windows SDK version 10.0.26100.0 to target Windows 10.0.26200.
+-- The CXX compiler identification is MSVC 19.44.35219.0
+-- Detecting CXX compiler ABI info
+-- Detecting CXX compiler ABI info - done
+-- Check for working CXX compiler: C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/VC/Tools/MSVC/14.44.35207/bin/Hostx64/x64/cl.exe - skipped
+-- Detecting CXX compile features
+-- Detecting CXX compile features - done
+-- Configuring done (4.0s)
+-- Generating done (0.0s)
+-- Build files have been written to: C:/Users/numbe/Downloads/NOAMi-midi/build/vs
+
 cmake --build build/vs --config Release
 ```
 

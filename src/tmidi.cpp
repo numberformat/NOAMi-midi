@@ -274,7 +274,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR szCmdLine,
 INT_PTR CALLBACK MainDlg(HWND hDlg, UINT iMsg, WPARAM wParam, LPARAM lParam)
 {
 	static char buf[MAX_PATH + 64];
-	char *ch;
+	const char *ch;
 	char filename[256] = "";
 	OPENFILENAME ofn;
 	int i, j, channel, category, instrument, ret;
@@ -1912,7 +1912,7 @@ void __cdecl playback_thread(void *spointer)
 	double curtime, starttime, pausetime, tmptime, timediff, displaytime;
 	double nexttrigger;
 	char buf[256];
-	char *ch;
+	const char *ch;
 	int first_pass;
 	int tracks_active;
 	int seeking = 0;
