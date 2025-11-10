@@ -21,7 +21,6 @@
 #include <windows.h>
 #include <mmsystem.h>
 #include <commctrl.h>
-#include <process.h>
 #include <winsock.h>
 
 #include <stdio.h>
@@ -37,6 +36,7 @@
 #include "MidiStateManager.h"
 #include "Mt32State.h"
 #include "GdiResourceManager.h"
+#include "Threading.h"
 
 // Windows variables
 HINSTANCE ghInstance = NULL;
@@ -84,11 +84,6 @@ HMIDIIN hin = NULL;
 HMIDIOUT hout = NULL;
 
 // Timing variables
-LARGE_INTEGER LIfreq = {0};
-LARGE_INTEGER LIms_time = {0};
-int freq = 0;
-int hr_ms_time = 0;
-
 midi_header_t mh = {0};
 track_header_t *th = NULL;
 midi_state_t ms;
@@ -271,9 +266,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
 	// Set process priority
 	SetPriorityClass(GetCurrentProcess(), HIGH_PRIORITY_CLASS);
 
-	// Determine performance counter frequency
-	QueryPerformanceFrequency(&LIfreq);
-	freq = LIfreq.LowPart / 1000;
+	// Initialize high-resolution timer frequency
+	(void) HighResFrequency();
 
 	// Initialize GDI resources
 	init_gdi_resources();
@@ -749,7 +743,7 @@ INT_PTR CALLBACK MainDlg(HWND hDlg, UINT iMsg, WPARAM wParam, LPARAM lParam)
 					if (HIWORD(wParam) == BN_CLICKED)
 					{
 						if (!(ms.playing) && ms.filename[0])
-							_beginthread(playback_thread, 0, NULL);
+							StartThread(playback_thread, NULL);
 						else if (ms.paused)
 							ms.paused = 0;
 					}
@@ -933,7 +927,7 @@ void close_midi_out(void)
 		all_notes_off();
 		midiOutReset(hout);
 		while (midiOutClose(hout) != MMSYSERR_NOERROR && i++ < 10)
-			Sleep(200);
+			SleepMilliseconds(200);
 		if (i == 10)
 		{
 			MessageBox(hwndApp, "Unable to close MIDI-out device!", "TMIDI Error", MB_ICONERROR);
@@ -2211,7 +2205,7 @@ BeginPlayback:
 				// Wait until we're unpaused or not playing anymore
 				while (1)
 				{
-					Sleep(100);
+					SleepMilliseconds(100);
 					if (!(ms.paused) || !(ms.playing) || ms.stop_requested)
 						break;
 				}
@@ -2308,7 +2302,7 @@ BeginPlayback:
 					sprintf(buf, "Sleeping for %d s\n", (int) (nexttrigger - curtime));
 					OutputDebugString(buf);
 #endif
-					Sleep((int) (nexttrigger - curtime));
+					SleepMilliseconds(static_cast<unsigned long>(nexttrigger - curtime));
 					//Sleep(5);
 					curtime = GetHRTickCount();
 					//i++;
@@ -2335,7 +2329,7 @@ BeginPlayback:
 	// PLAYBACK HAS STOPPED
 	// Turn off all the notes, reset the MIDI-out device, and close it
 	all_notes_off();
-	Sleep(50);
+	SleepMilliseconds(50);
 	midiOutReset(hout);
 	close_midi_out();
 
@@ -5735,7 +5729,7 @@ int handle_sysex_dump(FILE *fp)
 	do
 	{
 		i = midiOutUnprepareHeader(hout, &mh, sizeof(mh));
-		Sleep(50);
+		SleepMilliseconds(50);
 	} while (i == MIDIERR_STILLPLAYING);
 
 	timelen = (endTime - startTime) / 1000.0f;

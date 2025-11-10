@@ -10,6 +10,7 @@ set(TMIDI_SOURCES
     "${TMIDI_SOURCE_DIR}/MidiDeviceManager.cpp"
     "${TMIDI_SOURCE_DIR}/MidiStateManager.cpp"
     "${TMIDI_SOURCE_DIR}/Mt32State.cpp"
+    "${TMIDI_SOURCE_DIR}/Threading.cpp"
     "${TMIDI_SOURCE_DIR}/Playlist.cpp"
 )
 
