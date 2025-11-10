@@ -1,0 +1,41 @@
+# macOS artifacts
+.DS_Store
+
+# Visual Studio build outputs
+/Debug/
+/Release/
+/ipch/
+/.vs/
+*.VC.db
+*.VC.opendb
+*.sdf
+*.user
+*.suo
+*.ncb
+*.ilk
+*.pdb
+*.obj
+*.idb
+*.tlog/
+*.lastbuildstate
+*.log
+
+# Compiler caches
+*.pch
+*.cache/
+
+# Generated resources
+*.aps
+
+# Crash / profiler dumps
+*.dmp
+
+# Archives
+*.zip
+*.7z
+*.tar
+*.gz
+
+# Generic build directories
+/build/
+/bin/
