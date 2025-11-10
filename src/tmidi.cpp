@@ -33,6 +33,74 @@
 #include "tmidi.h"
 #include "resource.h"
 #include "Playlist.h"
+#include "MidiDeviceManager.h"
+
+// Windows variables
+HINSTANCE ghInstance = NULL;
+HWND hwndApp = NULL;
+HWND hwndText = NULL;
+HWND hwndStatusBar = NULL;
+HKEY key;
+HHOOK g_hhk = NULL;
+HWND g_hwndTT = NULL;
+char temp_dir[MAX_PATH] = "";
+char analysis_file[MAX_PATH] = "";
+char filename_to_load[MAX_PATH] = "";
+
+// GDI resources
+HBRUSH hNoteBackgroundBrush = NULL;
+HBRUSH hControllerBrush = NULL;
+HPEN hNoteBackgroundPen = NULL;
+HFONT hControllerFont = NULL;
+HFONT hJapaneseFont = NULL;
+
+// Tracks window variables
+HWND hwndTracks = NULL;
+int tracksLastValuesSet = 0;
+
+// Channels window variables
+HWND hwndChannels = NULL;
+int channelsLastValuesSet = 0;
+
+// Sysex window variables
+HWND hwndSysex = NULL;
+int sysexLastValuesSet = 0;
+
+// Settings saved in the registry
+int midi_in_cb = 0;
+int midi_out_cb = 0;
+int appRectSaved = 0;
+int textRectSaved = 0;
+int tracksRectSaved = 0;
+int channelsRectSaved = 0;
+int sysexRectSaved = 0;
+int genericTextRectSaved = 0;
+RECT appRect = {0};
+RECT textRect = {0};
+RECT tracksRect = {0};
+RECT channelsRect = {0};
+RECT sysexRect = {0};
+RECT genericTextRect = {0};
+int alwaysCheckAssociations = 1;
+
+// MIDI I/O handles
+HMIDIIN hin = NULL;
+HMIDIOUT hout = NULL;
+
+// Timing variables
+LARGE_INTEGER LIfreq = {0};
+LARGE_INTEGER LIms_time = {0};
+int freq = 0;
+int hr_ms_time = 0;
+
+midi_header_t mh = {0};
+track_header_t *th = NULL;
+midi_state_t ms;
+midi_text_t *midi_text_events = NULL;
+midi_sysex_t *midi_sysex_events = NULL;
+char mt32_patch_groups[128] = {0};
+char mt32_patch_programs[128] = {0};
+char mt32_memory_names[64][11] = {{0}};
 
 // Function prototypes
 // Registry functions
@@ -142,6 +210,7 @@ INT_PTR CALLBACK GenericTextDlg(HWND hDlg, UINT iMsg, WPARAM wParam, LPARAM lPar
 INT_PTR CALLBACK OutConfigDlg(HWND hDlg, UINT iMsg, WPARAM wParam, LPARAM lParam);
 
 static Playlist g_playlist;
+static MidiDeviceManager g_midi_device_manager;
 
 WNDPROC OldButtonProc;
 LRESULT CALLBACK NewButtonProc(HWND hDlg, UINT iMsg, WPARAM wParam, LPARAM lParam);
@@ -793,67 +862,9 @@ INT_PTR CALLBACK MainDlg(HWND hDlg, UINT iMsg, WPARAM wParam, LPARAM lParam)
 
 void enum_devices(HWND hwnd)
 {
-	int indevs, outdevs;
-	MIDIINCAPS incaps;
-	MIDIOUTCAPS outcaps;
-	int i, ret;
-	HWND hwndcb;
-	midi_device_t *dev, *ld = NULL;
-
-	hwndcb = GetDlgItem(hwnd, IDC_MIDI_IN);
-	SendMessage(hwndcb, CB_RESETCONTENT, 0, 0);
-	SendMessage(hwndcb, CB_ADDSTRING, 0, (LPARAM) "[None]");
-	indevs = midiInGetNumDevs();
-	for (i = 0; i < indevs; i++)
-	{
-		ret = midiInGetDevCaps(i, &incaps, sizeof(incaps));
-		if (ret != MMSYSERR_NOERROR)
-			continue;
-
-		// Set up a device node for this device
-		dev = (midi_device_t *) calloc(1, sizeof(midi_device_t));
-		dev->user_device_name = strdup(incaps.szPname);
-		dev->input_device = 1;
-		memcpy(&dev->incaps, &incaps, sizeof(MIDIINCAPS));
-		dev->usable = 1;
-		dev->standards = MIDI_STANDARD_GM;
-		dev->next = NULL;
-		if (!ld)
-			midi_devices = dev;
-		else
-			ld->next = dev;
-		ld = dev;
-		
-		SendMessage(hwndcb, CB_ADDSTRING, 0, (LPARAM) incaps.szPname);
-	}
-	SendMessage(hwndcb, CB_SETCURSEL, (WPARAM) midi_in_cb, 0);
-
-	hwndcb = GetDlgItem(hwnd, IDC_MIDI_OUT);
-	SendMessage(hwndcb, CB_RESETCONTENT, 0, 0);
-	SendMessage(hwndcb, CB_ADDSTRING, 0, (LPARAM) "[None]");
-	outdevs = midiOutGetNumDevs();
-	for (i = 0; i < outdevs; i++)
-	{
-		ret = midiOutGetDevCaps(i, &outcaps, sizeof(outcaps));
-		if (ret != MMSYSERR_NOERROR)
-			continue;
-
-		// Set up a device node for this device
-		dev = (midi_device_t *) calloc(1, sizeof(midi_device_t));
-		dev->user_device_name = strdup(outcaps.szPname);
-		memcpy(&dev->outcaps, &outcaps, sizeof(MIDIOUTCAPS));
-		dev->usable = 1;
-		dev->standards = MIDI_STANDARD_GM;
-		dev->next = NULL;
-		if (!ld)
-			midi_devices = dev;
-		else
-			ld->next = dev;
-		ld = dev;
-
-		SendMessage(hwndcb, CB_ADDSTRING, 0, (LPARAM) outcaps.szPname);
-	}
-	SendMessage(hwndcb, CB_SETCURSEL, (WPARAM) midi_out_cb, 0);
+	HWND midiInCombo = GetDlgItem(hwnd, IDC_MIDI_IN);
+	HWND midiOutCombo = GetDlgItem(hwnd, IDC_MIDI_OUT);
+	g_midi_device_manager.PopulateCombos(midiInCombo, midiOutCombo, midi_in_cb, midi_out_cb);
 }
 
 void init_midi_in(HWND hwndcb)
@@ -5945,14 +5956,14 @@ INT_PTR CALLBACK OutConfigDlg(HWND hDlg, UINT iMsg, WPARAM wParam, LPARAM lParam
 			
 			// Count the # of devices
 			i = 0;
-			for (dev = midi_devices; dev; dev = dev->next)
+			for (dev = g_midi_device_manager.Head(); dev; dev = dev->next)
 				if (!dev->input_device)
 					i++;
 			// Allocate a static array of device pointers
 			devs = (midi_device_t **) malloc(sizeof(midi_device_t *) * i);
 			// Add the devices to the list box
 			i = 0;
-			for (dev = midi_devices; dev; dev = dev->next)
+			for (dev = g_midi_device_manager.Head(); dev; dev = dev->next)
 			{
 				if (!dev->input_device)
 				{

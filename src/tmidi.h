@@ -1,4 +1,5 @@
 // TMIDI include file
+#pragma once
 
 #define HINYBBLE(a)		((a) >> 4)
 #define LONYBBLE(a)		((a) & 15)
@@ -38,62 +39,62 @@
 #define MAX_NOTE_HEIGHT		(BAR_HEIGHT - 2)
 
 // Windows variables
-HINSTANCE ghInstance = NULL;
-HWND hwndApp = NULL;
-HWND hwndText = NULL;
-HWND hwndStatusBar = NULL;
-HKEY key;	// handle to registry key
-HHOOK g_hhk;	// hook for tooltips
-HWND g_hwndTT;	// window handle for tooltip control
-char temp_dir[MAX_PATH] = "";
-char analysis_file[MAX_PATH] = "";
-char filename_to_load[MAX_PATH] = "";
+extern HINSTANCE ghInstance;
+extern HWND hwndApp;
+extern HWND hwndText;
+extern HWND hwndStatusBar;
+extern HKEY key;	// handle to registry key
+extern HHOOK g_hhk;	// hook for tooltips
+extern HWND g_hwndTT;	// window handle for tooltip control
+extern char temp_dir[MAX_PATH];
+extern char analysis_file[MAX_PATH];
+extern char filename_to_load[MAX_PATH];
 
 // GDI resources
-HBRUSH hNoteBackgroundBrush = NULL;
-HBRUSH hControllerBrush = NULL;
-HPEN hNoteBackgroundPen = NULL;
-HFONT hControllerFont = NULL;
-HFONT hJapaneseFont = NULL;
+extern HBRUSH hNoteBackgroundBrush;
+extern HBRUSH hControllerBrush;
+extern HPEN hNoteBackgroundPen;
+extern HFONT hControllerFont;
+extern HFONT hJapaneseFont;
 
 // Tracks window variables
-HWND hwndTracks = NULL;
-int tracksLastValuesSet = 0;
+extern HWND hwndTracks;
+extern int tracksLastValuesSet;
 
 // Channels window variables
-HWND hwndChannels = NULL;
-int channelsLastValuesSet = 0;
+extern HWND hwndChannels;
+extern int channelsLastValuesSet;
 
 // Sysex window variables
-HWND hwndSysex = NULL;
-int sysexLastValuesSet = 0;
+extern HWND hwndSysex;
+extern int sysexLastValuesSet;
 
 // Settings saved in the registry
-int midi_in_cb = 0;
-int midi_out_cb = 0;
-int appRectSaved = 0;
-int textRectSaved = 0;
-int tracksRectSaved = 0;
-int channelsRectSaved = 0;
-int sysexRectSaved = 0;
-int genericTextRectSaved = 0;
-RECT appRect;
-RECT textRect;
-RECT tracksRect;
-RECT channelsRect;
-RECT sysexRect;
-RECT genericTextRect;
-int alwaysCheckAssociations = 1;
+extern int midi_in_cb;
+extern int midi_out_cb;
+extern int appRectSaved;
+extern int textRectSaved;
+extern int tracksRectSaved;
+extern int channelsRectSaved;
+extern int sysexRectSaved;
+extern int genericTextRectSaved;
+extern RECT appRect;
+extern RECT textRect;
+extern RECT tracksRect;
+extern RECT channelsRect;
+extern RECT sysexRect;
+extern RECT genericTextRect;
+extern int alwaysCheckAssociations;
 
 // MIDI I/O handles
-HMIDIIN hin = NULL;
-HMIDIOUT hout = NULL;
+extern HMIDIIN hin;
+extern HMIDIOUT hout;
 
 // Timing variables
-LARGE_INTEGER LIfreq;
-LARGE_INTEGER LIms_time;
-int freq;
-int hr_ms_time;
+extern LARGE_INTEGER LIfreq;
+extern LARGE_INTEGER LIms_time;
+extern int freq;
+extern int hr_ms_time;
 
 typedef struct midi_header_t {
 	char id[4];							// MIDI header ID ("MThd")
@@ -218,15 +219,14 @@ typedef struct midi_device_t {
 	midi_device_t *next;
 } midi_device_t;
 
-midi_device_t *midi_devices = NULL;		// MIDI devices
-midi_header_t mh;						// MIDI file header struct
-track_header_t *th = NULL;				// Track state structs
-midi_state_t ms;						// MIDI state struct
-midi_text_t *midi_text_events = NULL;	// MIDI text events
-midi_sysex_t *midi_sysex_events = NULL;	// MIDI sysex events
-char mt32_patch_groups[128];			// MT-32 timbre group for a given patch
-char mt32_patch_programs[128];			// MT-32 program number for a given patch
-char mt32_memory_names[64][11];			// MT-32 memory timbre names
+extern midi_header_t mh;						// MIDI file header struct
+extern track_header_t *th;						// Track state structs
+extern midi_state_t ms;						// MIDI state struct
+extern midi_text_t *midi_text_events;	// MIDI text events
+extern midi_sysex_t *midi_sysex_events;	// MIDI sysex events
+extern char mt32_patch_groups[128];			// MT-32 timbre group for a given patch
+extern char mt32_patch_programs[128];			// MT-32 program number for a given patch
+extern char mt32_memory_names[64][11];			// MT-32 memory timbre names
 
 static const char * const sysex_manufacturer_names[] = {
 "126 - GM", 
