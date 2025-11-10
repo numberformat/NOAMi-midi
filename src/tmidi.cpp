@@ -702,7 +702,7 @@ INT_PTR CALLBACK MainDlg(HWND hDlg, UINT iMsg, WPARAM wParam, LPARAM lParam)
 					set_mod_pitch(0);
 					break;
 				case IDC_VELOCITY:
-					ms.mod_velocity = 0;
+					g_midi_state_manager.ResetModVelocity();
 					SendDlgItemMessage(hDlg, IDC_VELOCITY_SLIDER, TBM_SETPOS, TRUE, 64);
 					SetDlgItemText(hDlg, IDC_VELOCITY, "Velocity: 0");
 					break;
@@ -727,9 +727,9 @@ INT_PTR CALLBACK MainDlg(HWND hDlg, UINT iMsg, WPARAM wParam, LPARAM lParam)
 						{
 							for (i = 0; i < 16; i++)
 							{
-								ms.channels[i].lock_controller = 0;
-								ms.channels[i].displayed_controller = ms.channels[i].last_controller;
-								ms.channels[i].drawn = 1;
+								g_midi_state_manager.SetChannelLock(i, false);
+								g_midi_state_manager.SetChannelDisplayedController(i, ms.channels[i].last_controller);
+								g_midi_state_manager.MarkChannelDrawn(i);
 							}
 							update_display(NULL);
 						}
@@ -737,9 +737,9 @@ INT_PTR CALLBACK MainDlg(HWND hDlg, UINT iMsg, WPARAM wParam, LPARAM lParam)
 						{
 							for (i = 0; i < 16; i++)
 							{
-								ms.channels[i].lock_controller = 1;
-								ms.channels[i].displayed_controller = j;
-								ms.channels[i].drawn = 1;
+								g_midi_state_manager.SetChannelLock(i, true);
+								g_midi_state_manager.SetChannelDisplayedController(i, j);
+								g_midi_state_manager.MarkChannelDrawn(i);
 							}
 							update_display(NULL);
 						}
