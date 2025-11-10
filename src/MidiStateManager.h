@@ -27,6 +27,9 @@ public:
     int  ChannelDisplayedController(int channel) const;
     void MarkChannelDrawn(int channel);
 
+    void SetControllerValue(int channel, int controller, int value);
+    int ControllerValue(int channel, int controller) const;
+
 private:
     midi_state_t &state_;
 };

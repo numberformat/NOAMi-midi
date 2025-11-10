@@ -5988,7 +5988,7 @@ void handle_controller_bar_click(int x, int y, int channel)
 			if (v < 0)
 				v = 0;
 			// Store the controller value
-			ms.channels[channel].controllers[c] = v;
+			g_midi_state_manager.SetControllerValue(channel, c, v);
 			// Output the control change
 			set_channel_controller(channel, c, v);
 			// Update the display for this channel

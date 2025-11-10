@@ -81,3 +81,19 @@ void MidiStateManager::MarkChannelDrawn(int channel) {
         return;
     state_.channels[channel].drawn = 1;
 }
+
+void MidiStateManager::SetControllerValue(int channel, int controller, int value) {
+    if (channel < 0 || channel >= 16)
+        return;
+    if (controller < 0 || controller >= 128)
+        return;
+    state_.channels[channel].controllers[controller] = value;
+}
+
+int MidiStateManager::ControllerValue(int channel, int controller) const {
+    if (channel < 0 || channel >= 16)
+        return -1;
+    if (controller < 0 || controller >= 128)
+        return -1;
+    return state_.channels[channel].controllers[controller];
+}
