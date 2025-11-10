@@ -213,3 +213,15 @@ void MidiStateManager::SetLoopCount(int count) {
 int MidiStateManager::LoopCount() const {
     return state_.loop_count;
 }
+
+bool MidiStateManager::ConsumeLoopIteration() {
+    if (state_.loop_count > 0) {
+        state_.loop_count--;
+        return true;
+    }
+    return false;
+}
+
+void MidiStateManager::IncrementLoopCount() {
+    state_.loop_count++;
+}

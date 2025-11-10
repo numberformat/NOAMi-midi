@@ -49,6 +49,8 @@ public:
     double SeekTarget() const;
     void SetLoopCount(int count);
     int LoopCount() const;
+    bool ConsumeLoopIteration();
+    void IncrementLoopCount();
 
     void SetLastNote(int channel, unsigned char pitch, unsigned char velocity);
     void UpdateNoteVolume(int channel, int note, unsigned char volume);

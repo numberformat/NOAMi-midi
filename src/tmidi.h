@@ -84,17 +84,8 @@ extern RECT tracksRect;
 extern RECT channelsRect;
 extern RECT sysexRect;
 extern RECT genericTextRect;
-extern int alwaysCheckAssociations;
-
-// MIDI I/O handles
 extern HMIDIIN hin;
 extern HMIDIOUT hout;
-
-// Timing variables
-extern LARGE_INTEGER LIfreq;
-extern LARGE_INTEGER LIms_time;
-extern int freq;
-extern int hr_ms_time;
 
 typedef struct midi_header_t {
 	char id[4];							// MIDI header ID ("MThd")

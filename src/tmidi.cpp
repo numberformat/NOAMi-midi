@@ -38,6 +38,7 @@
 #include "Mt32State.h"
 #include "GdiResourceManager.h"
 #include "Threading.h"
+#include "SettingsStore.h"
 
 // Windows variables
 HINSTANCE ghInstance = NULL;
@@ -63,7 +64,7 @@ int channelsLastValuesSet = 0;
 HWND hwndSysex = NULL;
 int sysexLastValuesSet = 0;
 
-// Settings saved in the registry
+// Persisted settings
 int midi_in_cb = 0;
 int midi_out_cb = 0;
 int appRectSaved = 0;
@@ -78,7 +79,6 @@ RECT tracksRect = {0};
 RECT channelsRect = {0};
 RECT sysexRect = {0};
 RECT genericTextRect = {0};
-int alwaysCheckAssociations = 1;
 
 // MIDI I/O handles
 HMIDIIN hin = NULL;
@@ -95,11 +95,9 @@ static MidiStateManager g_midi_state_manager(ms);
 static Mt32State g_mt32_state;
 
 // Function prototypes
-// Registry functions
+// Settings functions
 void read_registry_settings(void);
 void write_registry_settings(void);
-void check_associations(void);
-void set_associations(void);
 // File functions
 int read_bytes(FILE *fp, unsigned char *buf, int num);
 unsigned int read_int(FILE *fp);
@@ -207,7 +205,6 @@ LRESULT CALLBACK NewButtonProc(HWND hDlg, UINT iMsg, WPARAM wParam, LPARAM lPara
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, 
 				   PSTR szCmdLine, int iCmdShow)
 {
-	DWORD disposition;
 	HWND hwnd;
 	COPYDATASTRUCT cds;
 	char fn[MAX_PATH];
@@ -243,21 +240,11 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
 			g_playlist.Add(fnptr);
 	}
 
-	// Initialize our connection to the registry
-	RegCreateKeyEx(HKEY_CURRENT_USER, "Software\\Tom Grandgent", 0, NULL, 
-		REG_OPTION_NON_VOLATILE, KEY_ALL_ACCESS, NULL, &key, (unsigned long *) &disposition);
-	RegCloseKey(key);
-	RegCreateKeyEx(HKEY_CURRENT_USER, "Software\\Tom Grandgent\\TMIDI", 0, NULL, 
-		REG_OPTION_NON_VOLATILE, KEY_ALL_ACCESS, NULL, &key, (unsigned long *) &disposition);
-	
-	// Read settings from the registry
+	// Read persisted settings
 	read_registry_settings();
 
 	// Initialize the common controls
 	InitCommonControls();
-
-	// Check file-type associations
-	check_associations();
 
 	// Get the temp directory
 	GetTempPath(sizeof(temp_dir), temp_dir);
@@ -2762,54 +2749,42 @@ int process_midi_event(track_header_t *th)
 
 void read_registry_settings(void)
 {
-	unsigned long i;
-
-	i = sizeof(midi_in_cb);
-	RegQueryValueEx(key, "midi_in_cb", 0, NULL, (BYTE *) &midi_in_cb, (unsigned long *) &i);
-	i = sizeof(midi_out_cb);
-	RegQueryValueEx(key, "midi_out_cb", 0, NULL, (BYTE *) &midi_out_cb, (unsigned long *) &i);
-	i = sizeof(alwaysCheckAssociations);
-	RegQueryValueEx(key, "alwaysCheckAssociations", 0, NULL, (BYTE *) &alwaysCheckAssociations, (unsigned long *) &i);
-	i = sizeof(appRectSaved);
-	RegQueryValueEx(key, "appRectSaved", 0, NULL, (BYTE *) &appRectSaved, (unsigned long *) &i);
-	i = sizeof(textRectSaved);
-	RegQueryValueEx(key, "textRectSaved", 0, NULL, (BYTE *) &textRectSaved, (unsigned long *) &i);
-	i = sizeof(tracksRectSaved);
-	RegQueryValueEx(key, "tracksRectSaved", 0, NULL, (BYTE *) &tracksRectSaved, (unsigned long *) &i);
-	i = sizeof(channelsRectSaved);
-	RegQueryValueEx(key, "channelsRectSaved", 0, NULL, (BYTE *) &channelsRectSaved, (unsigned long *) &i);
-	i = sizeof(tracksRectSaved);
-	RegQueryValueEx(key, "sysexRectSaved", 0, NULL, (BYTE *) &sysexRectSaved, (unsigned long *) &i);
-	i = sizeof(appRect);
-	RegQueryValueEx(key, "appRect", 0, NULL, (BYTE *) &appRect, (unsigned long *) &i);
-	i = sizeof(textRect);
-	RegQueryValueEx(key, "textRect", 0, NULL, (BYTE *) &textRect, (unsigned long *) &i);
-	i = sizeof(tracksRect);
-	RegQueryValueEx(key, "tracksRect", 0, NULL, (BYTE *) &tracksRect, (unsigned long *) &i);
-	i = sizeof(channelsRect);
-	RegQueryValueEx(key, "channelsRect", 0, NULL, (BYTE *) &channelsRect, (unsigned long *) &i);
-	i = sizeof(sysexRect);
-	RegQueryValueEx(key, "sysexRect", 0, NULL, (BYTE *) &sysexRect, (unsigned long *) &i);
-	i = sizeof(genericTextRect);
-	RegQueryValueEx(key, "genericTextRect", 0, NULL, (BYTE *) &genericTextRect, (unsigned long *) &i);
+	SettingsStore &store = SettingsStore::Instance();
+	store.Load();
+	midi_in_cb = store.midi_in_cb;
+	midi_out_cb = store.midi_out_cb;
+	appRectSaved = store.appRectSaved;
+	textRectSaved = store.textRectSaved;
+	tracksRectSaved = store.tracksRectSaved;
+	channelsRectSaved = store.channelsRectSaved;
+	sysexRectSaved = store.sysexRectSaved;
+	genericTextRectSaved = store.genericTextRectSaved;
+	appRect = store.appRect;
+	textRect = store.textRect;
+	tracksRect = store.tracksRect;
+	channelsRect = store.channelsRect;
+	sysexRect = store.sysexRect;
+	genericTextRect = store.genericTextRect;
 }
 
 void write_registry_settings(void)
 {
-	RegSetValueEx(key, "midi_in_cb", 0, REG_DWORD, (CONST BYTE *) &midi_in_cb, sizeof(midi_in_cb));
-	RegSetValueEx(key, "midi_out_cb", 0, REG_DWORD, (CONST BYTE *) &midi_out_cb, sizeof(midi_out_cb));
-	RegSetValueEx(key, "alwaysCheckAssociations", 0, REG_DWORD, (CONST BYTE *) &alwaysCheckAssociations, sizeof(alwaysCheckAssociations));
-	RegSetValueEx(key, "appRectSaved", 0, REG_DWORD, (CONST BYTE *) &appRectSaved, sizeof(appRectSaved));
-	RegSetValueEx(key, "textRectSaved", 0, REG_DWORD, (CONST BYTE *) &textRectSaved, sizeof(textRectSaved));
-	RegSetValueEx(key, "tracksRectSaved", 0, REG_DWORD, (CONST BYTE *) &tracksRectSaved, sizeof(tracksRectSaved));
-	RegSetValueEx(key, "channelsRectSaved", 0, REG_DWORD, (CONST BYTE *) &channelsRectSaved, sizeof(channelsRectSaved));
-	RegSetValueEx(key, "sysexRectSaved", 0, REG_DWORD, (CONST BYTE *) &sysexRectSaved, sizeof(sysexRectSaved));
-	RegSetValueEx(key, "appRect", 0, REG_BINARY, (CONST BYTE *) &appRect, sizeof(appRect));
-	RegSetValueEx(key, "textRect", 0, REG_BINARY, (CONST BYTE *) &textRect, sizeof(textRect));
-	RegSetValueEx(key, "tracksRect", 0, REG_BINARY, (CONST BYTE *) &tracksRect, sizeof(tracksRect));
-	RegSetValueEx(key, "channelsRect", 0, REG_BINARY, (CONST BYTE *) &channelsRect, sizeof(channelsRect));
-	RegSetValueEx(key, "sysexRect", 0, REG_BINARY, (CONST BYTE *) &sysexRect, sizeof(sysexRect));
-	RegSetValueEx(key, "genericTextRect", 0, REG_BINARY, (CONST BYTE *) &genericTextRect, sizeof(genericTextRect));
+	SettingsStore &store = SettingsStore::Instance();
+	store.midi_in_cb = midi_in_cb;
+	store.midi_out_cb = midi_out_cb;
+	store.appRectSaved = appRectSaved != 0;
+	store.textRectSaved = textRectSaved != 0;
+	store.tracksRectSaved = tracksRectSaved != 0;
+	store.channelsRectSaved = channelsRectSaved != 0;
+	store.sysexRectSaved = sysexRectSaved != 0;
+	store.genericTextRectSaved = genericTextRectSaved != 0;
+	store.appRect = appRect;
+	store.textRect = textRect;
+	store.tracksRect = tracksRect;
+	store.channelsRect = channelsRect;
+	store.sysexRect = sysexRect;
+	store.genericTextRect = genericTextRect;
+	store.Save();
 }
 
 // Sets the program override for a given channel
@@ -3405,134 +3380,6 @@ void set_tempo(int new_tempo)
 	}
 }
 
-void check_associations(void)
-{
-	DWORD disposition;
-	HKEY key;
-	unsigned long i;
-	int goAway = 0;
-	char buf[512];
-
-	if (!alwaysCheckAssociations)
-		return;
-
-	// See if .mid files are registered to TMIDI
-	RegCreateKeyEx(HKEY_CLASSES_ROOT, ".mid", 0, NULL, 
-		REG_OPTION_NON_VOLATILE, KEY_ALL_ACCESS, NULL, &key, (unsigned long *) &disposition);
-	if (key)
-	{
-		i = sizeof(buf);
-		RegQueryValueEx(key, "", 0, NULL, (BYTE *) &buf, (unsigned long *) &i);
-		RegCloseKey(key);
-		if (strcmp(buf, "TMIDI"))
-		{
-			i = DialogBoxParam(ghInstance, MAKEINTRESOURCE(IDD_ASSOC), NULL, AssocDlg, (LPARAM) &goAway);
-			if (goAway)
-				alwaysCheckAssociations = FALSE;
-			if (i)
-				set_associations();
-		}
-		else
-			set_associations();
-	}
-}
-
-void set_associations(void)
-{
-	HKEY key, subkey, tmkey, shkey;
-	char modulePath[512];
-	DWORD disposition;
-	char buf[512];
-
-	// Get the program's filename
-	GetModuleFileName(NULL, modulePath, sizeof(modulePath));
-
-	// Set up registry entries to associate TMIDI with MIDI files
-	// Registry entry for .mid
-	RegCreateKeyEx(HKEY_CLASSES_ROOT, ".mid", 0, NULL, 
-		REG_OPTION_NON_VOLATILE, KEY_ALL_ACCESS, NULL, &key, (unsigned long *) &disposition);
-	strcpy(buf, "TMIDI");
-	RegSetValueEx(key, "", 0, REG_SZ, (CONST BYTE *) buf, strlen(buf) + 1);
-	RegCloseKey(key);
-	// Registry key for TMIDI
-	RegCreateKeyEx(HKEY_CLASSES_ROOT, "TMIDI", 0, NULL, 
-		REG_OPTION_NON_VOLATILE, KEY_ALL_ACCESS, NULL, &tmkey, (unsigned long *) &disposition);
-	strcpy(buf, "TMIDI File");
-	RegSetValueEx(tmkey, "", 0, REG_SZ, (CONST BYTE *) buf, strlen(buf) + 1);
-	// Registry key for TMIDI\DefaultIcon
-	RegCreateKeyEx(tmkey, "DefaultIcon", 0, NULL, 
-		REG_OPTION_NON_VOLATILE, KEY_ALL_ACCESS, NULL, &key, (unsigned long *) &disposition);
-	strcpy(buf, modulePath);
-	strcat(buf, ",0");
-	RegSetValueEx(key, "", 0, REG_SZ, (CONST BYTE *) buf, strlen(buf) + 1);
-	RegCloseKey(key);
-	// Registry key for TMIDI\Shell
-	RegCreateKeyEx(tmkey, "Shell", 0, NULL, 
-		REG_OPTION_NON_VOLATILE, KEY_ALL_ACCESS, NULL, &shkey, (unsigned long *) &disposition);
-	strcpy(buf, "Play");
-	RegSetValueEx(shkey, "", 0, REG_SZ, (CONST BYTE *) buf, strlen(buf) + 1);
-	// Registry key for TMIDI\Shell\open
-	RegCreateKeyEx(shkey, "open", 0, NULL, 
-		REG_OPTION_NON_VOLATILE, KEY_ALL_ACCESS, NULL, &subkey, (unsigned long *) &disposition);
-	RegCreateKeyEx(subkey, "command", 0, NULL, 
-		REG_OPTION_NON_VOLATILE, KEY_ALL_ACCESS, NULL, &key, (unsigned long *) &disposition);
-	strcpy(buf, "\"");
-	strcat(buf, modulePath);
-	strcat(buf, "\" \"%1\"");
-	RegSetValueEx(key, "", 0, REG_SZ, (CONST BYTE *) buf, strlen(buf) + 1);
-	RegCloseKey(key);
-	RegCloseKey(subkey);
-	// Registry key for TMIDI\Shell\Play
-	RegCreateKeyEx(shkey, "Play", 0, NULL, 
-		REG_OPTION_NON_VOLATILE, KEY_ALL_ACCESS, NULL, &subkey, (unsigned long *) &disposition);
-	strcpy(buf, "&Play in TMIDI");
-	RegSetValueEx(subkey, "", 0, REG_SZ, (CONST BYTE *) buf, strlen(buf) + 1);
-	RegCreateKeyEx(subkey, "command", 0, NULL, 
-		REG_OPTION_NON_VOLATILE, KEY_ALL_ACCESS, NULL, &key, (unsigned long *) &disposition);
-	strcpy(buf, "\"");
-	strcat(buf, modulePath);
-	strcat(buf, "\" \"%1\"");
-	RegSetValueEx(key, "", 0, REG_SZ, (CONST BYTE *) buf, strlen(buf) + 1);
-	RegCloseKey(key);
-	RegCloseKey(subkey);
-	RegCloseKey(shkey);
-	RegCloseKey(tmkey);
-}
-
-// Dialog for file type association question
-INT_PTR CALLBACK AssocDlg(HWND hDlg, UINT iMsg, WPARAM wParam, LPARAM lParam)
-{
-	static int *goAway = NULL;
-
-	switch (iMsg)
-	{
-		case WM_INITDIALOG:
-		{
-			goAway = (int *) lParam;
-			return TRUE;
-		}
-		case WM_COMMAND:
-			switch (LOWORD(wParam))
-			{
-				case IDOK:
-					*goAway = IsDlgButtonChecked(hDlg, IDC_GOAWAY) == BST_CHECKED;
-					EndDialog(hDlg, TRUE);
-					break;
-				case IDCANCEL:
-					PostMessage(hDlg, WM_CLOSE, 0, 0);
-					break;
-			}
-			break;
-		case WM_CLOSE:
-		{
-			*goAway = IsDlgButtonChecked(hDlg, IDC_GOAWAY) == BST_CHECKED;
-			EndDialog(hDlg, FALSE);
-			break;
-		}
-	}
-
-	return FALSE;
-}
 
 // Gets a value from a scroll bar, to handle an HSCROLL or VSCROLL message
 // The value is stored in i.
