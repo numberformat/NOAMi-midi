@@ -34,6 +34,7 @@
 #include "resource.h"
 #include "Playlist.h"
 #include "MidiDeviceManager.h"
+#include "GdiResourceManager.h"
 
 // Windows variables
 HINSTANCE ghInstance = NULL;
@@ -46,13 +47,6 @@ HWND g_hwndTT = NULL;
 char temp_dir[MAX_PATH] = "";
 char analysis_file[MAX_PATH] = "";
 char filename_to_load[MAX_PATH] = "";
-
-// GDI resources
-HBRUSH hNoteBackgroundBrush = NULL;
-HBRUSH hControllerBrush = NULL;
-HPEN hNoteBackgroundPen = NULL;
-HFONT hControllerFont = NULL;
-HFONT hJapaneseFont = NULL;
 
 // Tracks window variables
 HWND hwndTracks = NULL;
@@ -101,6 +95,8 @@ midi_sysex_t *midi_sysex_events = NULL;
 char mt32_patch_groups[128] = {0};
 char mt32_patch_programs[128] = {0};
 char mt32_memory_names[64][11] = {{0}};
+
+static GdiResourceManager g_gdi_resources;
 
 // Function prototypes
 // Registry functions
@@ -2376,7 +2372,7 @@ BeginPlayback:
 	/*hdc = GetDC(hwndApp);
 	if (hdc)
 	{
-		SelectObject(hdc, hNoteBackgroundBrush);
+		SelectObject(hdc, g_gdi_resources.NoteBackgroundBrush());
 		for (i = 0; i < 16; i++)
 			Rectangle(hdc, BAR_X, BAR_Y + i * BAR_VSPACE, BAR_X + BAR_WIDTH, BAR_Y + i * BAR_VSPACE + BAR_HEIGHT);
 	}*/
@@ -2961,18 +2957,18 @@ void update_channel_background(HDC hdc, int i, channel_state_t *c)
 		// Calculate the width of the displayed controller bar
 		w = (int) ((((float) v / 127.0)) * BAR_WIDTH);
 		// Draw the displayed controller value bar
-		SelectObject(hdc, hControllerBrush);
+		SelectObject(hdc, g_gdi_resources.ControllerBrush());
 		Rectangle(hdc, (BAR_X - 1), BAR_Y + i * BAR_VSPACE, BAR_X + w, BAR_Y + i * BAR_VSPACE + BAR_HEIGHT);
 		// Draw the bar background
 		//if (w)
 		//	w++;
-		SelectObject(hdc, hNoteBackgroundBrush);
+		SelectObject(hdc, g_gdi_resources.NoteBackgroundBrush());
 		Rectangle(hdc, (BAR_X - 1) + w, BAR_Y + i * BAR_VSPACE, BAR_X + BAR_WIDTH, BAR_Y + i * BAR_VSPACE + BAR_HEIGHT);
 		// Draw a line to cover up the black line common to both rectangles (it contrasts too much)
 		if (w && w < BAR_WIDTH)
 		{
 			holdpen = (HPEN) GetCurrentObject(hdc, OBJ_PEN);
-			SelectObject(hdc, hNoteBackgroundPen);
+			SelectObject(hdc, g_gdi_resources.NoteBackgroundPen());
 			MoveToEx(hdc, (BAR_X - 1) + w, BAR_Y + i * BAR_VSPACE + 1, NULL);
 			LineTo(hdc, (BAR_X - 1) + w, BAR_Y + i * BAR_VSPACE + BAR_HEIGHT - 1);
 			SelectObject(hdc, holdpen);
@@ -2985,7 +2981,7 @@ void update_channel_background(HDC hdc, int i, channel_state_t *c)
 		txtrect.top = BAR_Y + i * BAR_VSPACE + 2;
 		txtrect.bottom = BAR_Y + i * BAR_VSPACE + BAR_HEIGHT - 1;
 		txtrect.right = (BAR_X - 1) + 2 + BAR_WIDTH - 2;
-		SelectObject(hdc, hControllerFont);
+		SelectObject(hdc, g_gdi_resources.ControllerFont());
 		//if (v != -1)
 		//	sprintf(buf, "%s (%d)", controller_names[c->displayed_controller], c->controllers[c->displayed_controller]);
 		//else
@@ -2995,7 +2991,7 @@ void update_channel_background(HDC hdc, int i, channel_state_t *c)
 	}
 	else
 	{
-		SelectObject(hdc, hNoteBackgroundBrush);
+		SelectObject(hdc, g_gdi_resources.NoteBackgroundBrush());
 		Rectangle(hdc, (BAR_X - 1), BAR_Y + i * BAR_VSPACE, BAR_X + BAR_WIDTH, BAR_Y + i * BAR_VSPACE + BAR_HEIGHT);
 	}
 }
@@ -6028,26 +6024,12 @@ INT_PTR CALLBACK OutConfigDlg(HWND hDlg, UINT iMsg, WPARAM wParam, LPARAM lParam
 
 void init_gdi_resources(void)
 {
-	unsigned char fg = 208, bg = 224;
-
-	hNoteBackgroundPen = CreatePen(PS_SOLID, 1, RGB(fg, fg, fg));
-	hNoteBackgroundBrush = CreateSolidBrush(RGB(fg, fg, fg));
-	hControllerBrush = CreateSolidBrush(RGB(bg, bg, bg));
-
-    hControllerFont = CreateFont(12, 0, 0, 0, FW_NORMAL, 0, 0, 0, DEFAULT_CHARSET, 
-        OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY, DEFAULT_PITCH, "Arial");
-
-/*    hJapaneseFont = CreateFont(16, 0, 0, 0, FW_NORMAL, 0, 0, 0, SHIFTJIS_CHARSET, 
-        OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY, DEFAULT_PITCH, "MS Gothic");*/
+	g_gdi_resources.Initialize();
 }
 
 void free_gdi_resources(void)
 {
-	DeleteObject(hNoteBackgroundPen);
-	DeleteObject(hNoteBackgroundBrush);
-	DeleteObject(hControllerBrush);
-	DeleteObject(hControllerFont);
-//	DeleteObject(hJapaneseFont);
+	g_gdi_resources.Cleanup();
 }
 
 // Handles a click or mouse movement in the main window
