@@ -32,6 +32,7 @@
 
 #include "tmidi.h"
 #include "resource.h"
+#include "Playlist.h"
 
 // Function prototypes
 // Registry functions
@@ -95,10 +96,6 @@ midi_text_t *new_midi_text(char *midi_text, int text_type, double midi_time, int
 void kill_all_midi_text(void);
 midi_sysex_t *new_midi_sysex(unsigned char *data, int length, double midi_time, int track, int track_offset, int channel);
 void kill_all_midi_sysex(void);
-// Playlist functions
-playlist_t *playlist_add(char *filename);
-void playlist_clear(void);
-playlist_t *playlist_remove(playlist_t *target);
 // Tracks list view functions
 void InitTracksListView(HWND hwndLV);
 void FillTracksListView(HWND hwndLV);
@@ -144,6 +141,8 @@ INT_PTR CALLBACK AssocDlg(HWND hDlg, UINT iMsg, WPARAM wParam, LPARAM lParam);
 INT_PTR CALLBACK GenericTextDlg(HWND hDlg, UINT iMsg, WPARAM wParam, LPARAM lParam);
 INT_PTR CALLBACK OutConfigDlg(HWND hDlg, UINT iMsg, WPARAM wParam, LPARAM lParam);
 
+static Playlist g_playlist;
+
 WNDPROC OldButtonProc;
 LRESULT CALLBACK NewButtonProc(HWND hDlg, UINT iMsg, WPARAM wParam, LPARAM lParam);
 
@@ -183,7 +182,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
 			return 0;
 		}
 		else
-			playlist_add(fnptr);
+			g_playlist.Add(fnptr);
 	}
 
 	// Initialize our connection to the registry
@@ -306,9 +305,9 @@ INT_PTR CALLBACK MainDlg(HWND hDlg, UINT iMsg, WPARAM wParam, LPARAM lParam)
 			// Create the tooltip control
 			//DoCreateDialogTooltip();
 			// Set the playback head to the beginning of the playlist
-			if (playlist)
+			if (!g_playlist.Empty())
 			{
-				playback_head = playlist;
+				g_playlist.ResetCurrentToHead();
 				PostMessage(hDlg, WMAPP_LOADFILE, 0, 0);
 			}
 			// Initialize all channels to unmuted
@@ -363,12 +362,12 @@ INT_PTR CALLBACK MainDlg(HWND hDlg, UINT iMsg, WPARAM wParam, LPARAM lParam)
 				// We're being told by another instance that the user has executed 
 				// an associated file, so handle it.
 
-				// Clear the playlist, add this file, make it the current file, and load it up
-				playlist_clear();
-				playlist_add((char *) pcds->lpData);
-				playback_head = playlist;
-				//SetForegroundWindow(hDlg);
-				PostMessage(hDlg, WMAPP_LOADFILE, 0, 0);
+					// Clear the playlist, add this file, make it the current file, and load it up
+					g_playlist.Clear();
+					g_playlist.Add((char *) pcds->lpData);
+					g_playlist.ResetCurrentToHead();
+					//SetForegroundWindow(hDlg);
+					PostMessage(hDlg, WMAPP_LOADFILE, 0, 0);
 				return TRUE;
 			}
 			return FALSE;
@@ -411,16 +410,13 @@ INT_PTR CALLBACK MainDlg(HWND hDlg, UINT iMsg, WPARAM wParam, LPARAM lParam)
 		case WMAPP_DONE_PLAYING:
 			sprintf(buf, "Stopped playing %s.", extract_filename(ms.filename));
 			SetWindowText(hwndStatusBar, buf);
-			if (playback_head)
+			if (g_playlist.HasCurrent())
 			{
-				if (!strcmp(playback_head->filename, ms.filename))
+				const std::string *currentFile = g_playlist.CurrentFilename();
+				if (currentFile && !strcmp(currentFile->c_str(), ms.filename))
 				{
-					if (ms.finished_naturally)
-					{
-						playback_head = playback_head->next;
-						if (playback_head)
-							PostMessage(hDlg, WMAPP_LOADFILE, 0, 0);
-					}
+					if (ms.finished_naturally && g_playlist.AdvanceCurrent())
+						PostMessage(hDlg, WMAPP_LOADFILE, 0, 0);
 				}
 				else
 					PostMessage(hDlg, WMAPP_LOADFILE, 0, 0);
@@ -433,31 +429,37 @@ INT_PTR CALLBACK MainDlg(HWND hDlg, UINT iMsg, WPARAM wParam, LPARAM lParam)
 				ms.stop_requested = 1;
 				break;
 			}
-			if (playback_head)
+			if (g_playlist.HasCurrent())
 			{
-				if (!load_midi(playback_head->filename, hDlg))
-					PostMessage(hDlg, WM_COMMAND, MAKEWPARAM(IDC_PLAY, BN_CLICKED), (LPARAM) GetDlgItem(hDlg, IDC_PLAY));
-				else
+				const std::string *currentFile = g_playlist.CurrentFilename();
+				if (currentFile)
 				{
-					playback_head = playback_head->next;
-					PostMessage(hDlg, WMAPP_LOADFILE, 0, 0);
+					strncpy(filename, currentFile->c_str(), sizeof(filename));
+					filename[sizeof(filename) - 1] = '\0';
+					if (!load_midi(filename, hDlg))
+						PostMessage(hDlg, WM_COMMAND, MAKEWPARAM(IDC_PLAY, BN_CLICKED), (LPARAM) GetDlgItem(hDlg, IDC_PLAY));
+					else
+					{
+						if (g_playlist.AdvanceCurrent())
+							PostMessage(hDlg, WMAPP_LOADFILE, 0, 0);
+					}
 				}
 			}
 			break;
 
-		case WM_DROPFILES:
-			hDrop = (HANDLE) wParam;
-			numFiles = DragQueryFile((HDROP) hDrop, 0xFFFFFFFF, NULL, 0);
-			playlist_clear();
-			for (i = 0; i < numFiles; i++)
-			{
-				DragQueryFile((HDROP) hDrop, i, filename, sizeof(filename));
-				playlist_add(filename);
-			}
-			playback_head = playlist;
-			// Load the file that was dragged onto the window
-			PostMessage(hDlg, WMAPP_LOADFILE, 0, 0);
-			break;
+			case WM_DROPFILES:
+				hDrop = (HANDLE) wParam;
+				numFiles = DragQueryFile((HDROP) hDrop, 0xFFFFFFFF, NULL, 0);
+				g_playlist.Clear();
+				for (i = 0; i < numFiles; i++)
+				{
+					DragQueryFile((HDROP) hDrop, i, filename, sizeof(filename));
+					g_playlist.Add(filename);
+				}
+				g_playlist.ResetCurrentToHead();
+				// Load the file that was dragged onto the window
+				PostMessage(hDlg, WMAPP_LOADFILE, 0, 0);
+				break;
 
 		case WM_HSCROLL:
 			if (((HWND) lParam) == GetDlgItem(hDlg, IDC_TEMPO_SLIDER))
@@ -3560,43 +3562,6 @@ INT_PTR CALLBACK AssocDlg(HWND hDlg, UINT iMsg, WPARAM wParam, LPARAM lParam)
 	}
 
 	return FALSE;
-}
-
-playlist_t *playlist_add(char *filename)
-{
-	playlist_t *n, *p;
-
-	n = (playlist_t *) malloc(sizeof(playlist_t));
-	strcpy(n->filename, filename);
-	n->prev = n->next = NULL;
-	if (!playlist)
-		playlist = n;
-	else
-	{
-		for (p = playlist; p->next; p = p->next);
-		p->next = n;
-		n->prev = p;
-	}
-
-	return n;
-}
-
-void playlist_clear(void)
-{
-	playlist_t *p;
-
-	while (playlist)
-	{
-		p = playlist->next;
-		free(playlist);
-		playlist = p;
-	}
-}
-
-playlist_t *playlist_remove(playlist_t *target)
-{
-	(void)target;
-	return NULL;
 }
 
 // Gets a value from a scroll bar, to handle an HSCROLL or VSCROLL message

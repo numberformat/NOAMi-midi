@@ -95,12 +95,6 @@ LARGE_INTEGER LIms_time;
 int freq;
 int hr_ms_time;
 
-typedef struct playlist_t {
-	char filename[MAX_PATH];
-	struct playlist_t *prev;
-	struct playlist_t *next;
-} playlist_t;
-
 typedef struct midi_header_t {
 	char id[4];							// MIDI header ID ("MThd")
 	unsigned int header_size;			// Size of header in bytes
@@ -225,8 +219,6 @@ typedef struct midi_device_t {
 } midi_device_t;
 
 midi_device_t *midi_devices = NULL;		// MIDI devices
-playlist_t *playlist = NULL;			// Playlist
-playlist_t *playback_head = NULL;		// Pointer to playlist entry currently being played (or last played)
 midi_header_t mh;						// MIDI file header struct
 track_header_t *th = NULL;				// Track state structs
 midi_state_t ms;						// MIDI state struct
