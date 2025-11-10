@@ -224,9 +224,6 @@ extern track_header_t *th;						// Track state structs
 extern midi_state_t ms;						// MIDI state struct
 extern midi_text_t *midi_text_events;	// MIDI text events
 extern midi_sysex_t *midi_sysex_events;	// MIDI sysex events
-extern char mt32_patch_groups[128];			// MT-32 timbre group for a given patch
-extern char mt32_patch_programs[128];			// MT-32 program number for a given patch
-extern char mt32_memory_names[64][11];			// MT-32 memory timbre names
 
 static const char * const sysex_manufacturer_names[] = {
 "126 - GM", 

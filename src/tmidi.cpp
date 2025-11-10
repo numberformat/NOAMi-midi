@@ -34,6 +34,7 @@
 #include "resource.h"
 #include "Playlist.h"
 #include "MidiDeviceManager.h"
+#include "Mt32State.h"
 #include "GdiResourceManager.h"
 
 // Windows variables
@@ -92,11 +93,8 @@ track_header_t *th = NULL;
 midi_state_t ms;
 midi_text_t *midi_text_events = NULL;
 midi_sysex_t *midi_sysex_events = NULL;
-char mt32_patch_groups[128] = {0};
-char mt32_patch_programs[128] = {0};
-char mt32_memory_names[64][11] = {{0}};
-
 static GdiResourceManager g_gdi_resources;
+static Mt32State g_mt32_state;
 
 // Function prototypes
 // Registry functions
@@ -142,7 +140,6 @@ void set_mod_pitch(signed int i);
 void set_mod_velocity(signed int i);
 void set_channel_mute(int channel, int mute);
 void set_channel_solo(int channel);
-void init_mt32_state(void);
 // Name resolution / sysex interpretation functions
 const char *get_drum_kit_name(int program);
 const char *get_sysex_manufacturer_name(int id);
@@ -150,8 +147,6 @@ char *interpret_sysex(unsigned char *s, int len);
 char *interpret_model(unsigned char *s);
 char *interpret_command(unsigned char *s);
 char interpret_sysex_part(unsigned char c);
-void interpret_mt32_patch_memory(unsigned char *s, int len);
-void interpret_mt32_timbre_memory(unsigned char *s, int len);
 char *get_yamaha_effect_name(unsigned char effect);
 void check_midi_standard(unsigned char *data);
 const char *get_program_name(unsigned char program, unsigned char bank);
@@ -379,7 +374,7 @@ INT_PTR CALLBACK MainDlg(HWND hDlg, UINT iMsg, WPARAM wParam, LPARAM lParam)
 			for (i = 0; i < 16; i++)
 				set_channel_mute(i, FALSE);
 			// Initialize MT-32 state values
-			init_mt32_state();
+			g_mt32_state.Reset();
 			// Subclass the channel number button windows
 			for (i = 0; i < 16; i++)
 			{
@@ -4406,11 +4401,11 @@ char *interpret_sysex(unsigned char *s, int len)
 							break;
 						case 0x05:	// Patch Memory
 							strcpy(buf, "Patch Memory");
-							interpret_mt32_patch_memory(s, len);
+						g_mt32_state.InterpretPatchMemory(s, len);
 							break;
 						case 0x08:	// Timbre Memory
 							strcpy(buf, "Timbre Memory: ");
-							interpret_mt32_timbre_memory(s, len);
+						g_mt32_state.InterpretTimbreMemory(s, len);
 							strncat(buf, (char *) &s[7], 10);
 							break;
 						case 0x10:	// System Area
@@ -5792,85 +5787,6 @@ char *extract_filename(char *filename)
 		return filename;
 }
 
-// Interprets patch memory sysex for the MT-32
-void interpret_mt32_patch_memory(unsigned char *s, int len)
-{
-	int addr;
-	unsigned char *p = s + 7;
-	unsigned char ch, group, num;
-	int patch;
-
-	//fp = fopen("k:\\projects\\tmidi\\patchmem.txt", "a");
-	addr = (s[5] << 7) | s[6];
-	//fprintf(fp, "\nStarting address: %d\n", addr);
-
-	while (p - s < len - 9)
-	{
-		patch = addr / 8;
-		//fprintf(fp, "\nAddr %d, patch %d:\n", addr, patch);
-		group = ch = *p++;
-		/*fprintf(fp, "   Timbre group: ");
-		switch (ch)
-		{
-			case 0: fprintf(fp, "Group A\n"); break;
-			case 1: fprintf(fp, "Group B\n"); break;
-			case 2: fprintf(fp, "Memory\n"); break;
-			case 3: fprintf(fp, "Rhythm\n"); break;
-			default: fprintf(fp, "Unknown (%d)\n", ch);
-		}*/
-		mt32_patch_groups[patch] = ch;
-		num = ch = *p++;
-		//fprintf(fp, "  Timbre number: %d\n", ch);
-		//fprintf(fp, " Program number: %d\n", group == 1 ? num + 64 : num);
-		mt32_patch_programs[patch] = group == 1 ? num + 64 : num;
-		ch = *p++;
-		//fprintf(fp, "      Key shift: %d\n", (signed int) ch - 24);
-		ch = *p++;
-		//fprintf(fp, "      Fine tune: %d\n", (signed int) ch - 50);
-		ch = *p++;
-		//fprintf(fp, "   Bender range: %d\n", ch);
-		ch = *p++;
-		//fprintf(fp, "    Assign mode: Poly %d\n", ch + 1);
-		ch = *p++;
-		//fprintf(fp, "  Reverb switch: %s\n", ch ? "On" : "Off");
-		ch = *p++;
-		//fprintf(fp, "          Dummy: %d\n", ch);
-		
-		addr += 8;
-	}
-
-	//fclose(fp);
-}
-
-// Interprets timbre memory sysex for the MT-32
-void interpret_mt32_timbre_memory(unsigned char *s, int len)
-{
-	int timbre;
-	(void)len;
-
-	timbre = s[5] / 2;
-	mt32_memory_names[timbre][0] = '\0';
-	strncat(mt32_memory_names[timbre], (char *) &s[7], 10);
-}
-
-// Initializes MT-32 state values on program startup
-void init_mt32_state(void)
-{
-	int i;
-
-	for (i = 0; i < 128; i++)
-	{
-		if (i < 64)
-			mt32_patch_groups[i] = 0;
-		else
-			mt32_patch_groups[i] = 1;
-		mt32_patch_programs[i] = (char) i;
-	}
-
-	for (i = 0; i < 64; i++)
-		mt32_memory_names[i][0] = '\0';
-}
-
 // Returns a program name, given a program number, taking into account 
 // current mode of operation and state values.
 const char *get_program_name(unsigned char program, unsigned char bank)
@@ -5883,12 +5799,16 @@ const char *get_program_name(unsigned char program, unsigned char bank)
 	{
 		case MIDI_STANDARD_MT32:
 		{
-			const unsigned char patch_program = static_cast<unsigned char>(mt32_patch_programs[program]);
-			switch (mt32_patch_groups[program])
+			const unsigned char patch_program = g_mt32_state.PatchProgram(program);
+			switch (g_mt32_state.PatchGroup(program))
 			{
 				case 2:		// Memory patch
 					if (patch_program < 64)
-						return mt32_memory_names[patch_program];
+					{
+						const char *memory_name = g_mt32_state.MemoryName(patch_program);
+						if (memory_name && memory_name[0])
+							return memory_name;
+					}
 					/* fall through */
 				case 3:
 					sprintf(name, "Rhythm patch %d", patch_program);
