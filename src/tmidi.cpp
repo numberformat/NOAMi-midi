@@ -544,11 +544,11 @@ INT_PTR CALLBACK MainDlg(HWND hDlg, UINT iMsg, WPARAM wParam, LPARAM lParam)
 				{
 					case TB_ENDTRACK:
 						i = SendMessage((HWND) lParam, TBM_GETPOS, 0, 0);
-						ms.seek_sliding = 0;
-						if (!ms.seeking)
+						g_midi_state_manager.SetSeekSliding(false);
+						if (!g_midi_state_manager.Seeking())
 						{
-							ms.seeking = 1;
-							ms.seek_to = (double) (i * 1000);
+							g_midi_state_manager.SetSeeking(true);
+							g_midi_state_manager.SetSeekTarget((double) (i * 1000));
 						}
 						break;
 					case TB_THUMBTRACK:
@@ -556,7 +556,7 @@ INT_PTR CALLBACK MainDlg(HWND hDlg, UINT iMsg, WPARAM wParam, LPARAM lParam)
 						i = HIWORD(wParam);
 						sprintf(buf, "%d:%02d / %d:%02d", i / 60, i % 60, ms.song_length / 60, ms.song_length % 60);
 						SetDlgItemText(hDlg, IDC_SONG_LENGTH, buf);
-						ms.seek_sliding = 1;
+						g_midi_state_manager.SetSeekSliding(true);
 						break;
 				}
 			}
@@ -1975,9 +1975,9 @@ void __cdecl playback_thread(void *spointer)
 	int seeking = 0;
 
 	// Initialize seeking states
-	ms.seeking = 0;
-	ms.seek_sliding = 0;
-	ms.seek_to = 0.0f;
+	g_midi_state_manager.SetSeeking(false);
+	g_midi_state_manager.SetSeekSliding(false);
+	g_midi_state_manager.SetSeekTarget(0.0);
 	/*if (ms.found_note_on && ms.first_note_on > 0.0f)
 	{
 		ms.seeking = 1;
@@ -2053,7 +2053,7 @@ BeginPlayback:
 		// Initialize playback parameters
 		num_events = 0;
 		//ms.analyzing = 0;
-		ms.analyzing = ms.seeking;
+	g_midi_state_manager.SetAnalyzing(g_midi_state_manager.Seeking());
 		g_midi_state_manager.SetPlaying(true);
 		g_midi_state_manager.SetPaused(false);
 		g_midi_state_manager.SetFinishedNaturally(false);

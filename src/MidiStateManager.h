@@ -39,6 +39,16 @@ public:
     bool StopRequested() const;
     void SetFinishedNaturally(bool finished);
     bool FinishedNaturally() const;
+    void SetAnalyzing(bool analyzing);
+    bool IsAnalyzing() const;
+    void SetSeekSliding(bool sliding);
+    bool SeekSliding() const;
+    void SetSeeking(bool seeking);
+    bool Seeking() const;
+    void SetSeekTarget(double milliseconds);
+    double SeekTarget() const;
+    void SetLoopCount(int count);
+    int LoopCount() const;
 
     void SetLastNote(int channel, unsigned char pitch, unsigned char velocity);
     void UpdateNoteVolume(int channel, int note, unsigned char volume);

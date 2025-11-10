@@ -136,6 +136,14 @@ bool MidiStateManager::FinishedNaturally() const {
     return state_.finished_naturally != 0;
 }
 
+void MidiStateManager::SetAnalyzing(bool analyzing) {
+    state_.analyzing = analyzing ? 1 : 0;
+}
+
+bool MidiStateManager::IsAnalyzing() const {
+    return state_.analyzing != 0;
+}
+
 void MidiStateManager::SetLastNote(int channel, unsigned char pitch, unsigned char velocity) {
     if (channel < 0 || channel >= 16)
         return;
@@ -172,4 +180,36 @@ void MidiStateManager::ResetChannelNotes(int channel) {
 void MidiStateManager::ResetAllChannelNotes() {
     for (int channel = 0; channel < 16; ++channel)
         ResetChannelNotes(channel);
+}
+
+void MidiStateManager::SetSeekSliding(bool sliding) {
+    state_.seek_sliding = sliding ? 1 : 0;
+}
+
+bool MidiStateManager::SeekSliding() const {
+    return state_.seek_sliding != 0;
+}
+
+void MidiStateManager::SetSeeking(bool seeking) {
+    state_.seeking = seeking ? 1 : 0;
+}
+
+bool MidiStateManager::Seeking() const {
+    return state_.seeking != 0;
+}
+
+void MidiStateManager::SetSeekTarget(double milliseconds) {
+    state_.seek_to = milliseconds;
+}
+
+double MidiStateManager::SeekTarget() const {
+    return state_.seek_to;
+}
+
+void MidiStateManager::SetLoopCount(int count) {
+    state_.loop_count = count;
+}
+
+int MidiStateManager::LoopCount() const {
+    return state_.loop_count;
 }
