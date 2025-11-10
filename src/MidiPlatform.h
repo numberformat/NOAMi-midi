@@ -1,27 +1,73 @@
 #pragma once
 
-#include <windows.h>
-#include <mmsystem.h>
+#include <cstddef>
+#include <cstdint>
+#include <functional>
+#include <memory>
+#include <string>
+#include <vector>
 
-namespace MidiPlatform {
+enum class MidiPortTechnology {
+    Unknown = 0,
+    MidiPort,
+    Synth,
+    SquareWaveSynth,
+    FmSynth,
+    MidiMapper,
+    WavetableSynth,
+    SoftwareSynth,
+};
 
-UINT GetInputDeviceCount();
-UINT GetOutputDeviceCount();
-MMRESULT GetInputDeviceCaps(UINT deviceId, MIDIINCAPS *caps);
-MMRESULT GetOutputDeviceCaps(UINT deviceId, MIDIOUTCAPS *caps);
+struct MidiInputCaps {
+    std::string name;
+    uint16_t manufacturerId = 0;
+    uint16_t productId = 0;
+    uint32_t driverVersion = 0;
+};
 
-MMRESULT OpenInput(HMIDIIN *handle, UINT deviceId, DWORD_PTR callback, DWORD_PTR instance);
-void CloseInput(HMIDIIN handle);
-MMRESULT StartInput(HMIDIIN handle);
-MMRESULT StopInput(HMIDIIN handle);
+struct MidiOutputCaps {
+    std::string name;
+    uint16_t manufacturerId = 0;
+    uint16_t productId = 0;
+    uint32_t driverVersion = 0;
+    uint16_t technologyRaw = 0;
+    MidiPortTechnology technology = MidiPortTechnology::Unknown;
+};
 
-MMRESULT OpenOutput(HMIDIOUT *handle, UINT deviceId);
-MMRESULT CloseOutput(HMIDIOUT handle);
-void ResetOutput(HMIDIOUT handle);
+struct MidiInputMessage {
+    enum class Type {
+        Opened,
+        Closed,
+        ShortMessage,
+        LongData,
+    };
 
-MMRESULT SendShortMessage(HMIDIOUT handle, DWORD message);
-MMRESULT PrepareLongMessage(HMIDIOUT handle, MIDIHDR *header);
-MMRESULT SendLongMessage(HMIDIOUT handle, MIDIHDR *header);
-MMRESULT UnprepareLongMessage(HMIDIOUT handle, MIDIHDR *header);
+    Type type = Type::Opened;
+    uint32_t shortMessage = 0;
+    std::vector<uint8_t> longData;
+};
 
-} // namespace MidiPlatform
+using MidiInputCallback = std::function<void(const MidiInputMessage &)>;
+
+class MidiPlatform {
+public:
+    virtual ~MidiPlatform() = default;
+
+    virtual uint32_t GetInputDeviceCount() const = 0;
+    virtual uint32_t GetOutputDeviceCount() const = 0;
+    virtual bool GetInputDeviceCaps(uint32_t deviceId, MidiInputCaps &caps) const = 0;
+    virtual bool GetOutputDeviceCaps(uint32_t deviceId, MidiOutputCaps &caps) const = 0;
+
+    virtual bool OpenOutput(uint32_t deviceId) = 0;
+    virtual bool CloseOutput() = 0;
+    virtual bool SendShortMessage(uint32_t message) = 0;
+    virtual bool SendLongMessage(const uint8_t *data, size_t size) = 0;
+    virtual void ResetOutput() = 0;
+
+    virtual bool OpenInput(uint32_t deviceId, MidiInputCallback callback) = 0;
+    virtual bool CloseInput() = 0;
+    virtual bool StartInput() = 0;
+    virtual bool StopInput() = 0;
+};
+
+std::unique_ptr<MidiPlatform> CreateMidiPlatform();

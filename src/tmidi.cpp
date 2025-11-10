@@ -28,11 +28,14 @@
 #include <io.h>
 #include <math.h>
 #include <assert.h>
+#include <memory>
+#include <vector>
 
 #include "tmidi.h"
 #include "resource.h"
 #include "Playlist.h"
 #include "MidiDeviceManager.h"
+#include "MidiBackend.h"
 #include "MidiStateManager.h"
 #include "MidiPlatform.h"
 #include "Mt32State.h"
@@ -80,10 +83,6 @@ RECT channelsRect = {0};
 RECT sysexRect = {0};
 RECT genericTextRect = {0};
 
-// MIDI I/O handles
-HMIDIIN hin = NULL;
-HMIDIOUT hout = NULL;
-
 // Timing variables
 midi_header_t mh = {0};
 track_header_t *th = NULL;
@@ -93,6 +92,10 @@ midi_sysex_t *midi_sysex_events = NULL;
 static GdiResourceManager g_gdi_resources;
 static MidiStateManager g_midi_state_manager(ms);
 static Mt32State g_mt32_state;
+static std::unique_ptr<MidiPlatform> g_midi_platform = CreateMidiPlatform();
+static MidiBackend g_midi_backend(*g_midi_platform);
+static Playlist g_playlist;
+static MidiDeviceManager g_midi_device_manager(*g_midi_platform);
 
 // Function prototypes
 // Settings functions
@@ -120,7 +123,7 @@ void init_midi_in(HWND hwndcb);
 void init_midi_out(HWND hwndcb);
 void close_midi_in(void);
 void close_midi_out(void);
-void CALLBACK MidiInProc(HMIDIIN hMidiIn, UINT wMsg, DWORD dwInstance, DWORD dwParam1, DWORD dwParam2);
+void MidiInputHandler(const MidiInputMessage &message);
 void output_sysex_data(unsigned char channel, unsigned char *data, int length);
 int handle_sysex_dump(FILE *fp);
 void note_on(unsigned char on, unsigned char note, unsigned char velocity, unsigned char channel);
@@ -136,7 +139,30 @@ void set_mod_pitch(signed int i);
 void set_mod_velocity(signed int i);
 void set_channel_mute(int channel, int mute);
 void set_channel_solo(int channel);
-// Name resolution / sysex interpretation functions
+void update_note_display(int channel, int note);
+void set_seekbar_pos(double millis);
+void stop_playback(void);
+int get_category_from_program(int program);
+int convert_category_to_program(int category, int program);
+void set_statusbar_text(const char *text);
+int save_modified_playlist(HWND hwnd);
+int load_playlist(HWND hwnd);
+int save_playlist(HWND hwnd);
+void kill_all_midi_text(void);
+void kill_all_midi_sysex(void);
+void handle_mousedown(int x, int y, int button, int msg);
+void handle_controller_bar_click(int x, int y, int channel);
+int get_clicked_channel(int x, int y);
+void handle_controller_bar_popup(int x, int y, int channel);
+void init_gdi_resources(void);
+void free_gdi_resources(void);
+INT_PTR CALLBACK MainDlg(HWND hDlg, UINT iMsg, WPARAM wParam, LPARAM lParam);
+INT_PTR CALLBACK TextDlg(HWND hDlg, UINT iMsg, WPARAM wParam, LPARAM lParam);
+INT_PTR CALLBACK TracksDlg(HWND hDlg, UINT iMsg, WPARAM wParam, LPARAM lParam);
+INT_PTR CALLBACK ChannelsDlg(HWND hDlg, UINT iMsg, WPARAM wParam, LPARAM lParam);
+INT_PTR CALLBACK SysexDlg(HWND hDlg, UINT iMsg, WPARAM wParam, LPARAM lParam);
+INT_PTR CALLBACK GenericTextDlg(HWND hDlg, UINT iMsg, WPARAM wParam, LPARAM lParam);
+INT_PTR CALLBACK OutConfigDlg(HWND hDlg, UINT iMsg, WPARAM wParam, LPARAM lParam);
 const char *get_drum_kit_name(int program);
 const char *get_sysex_manufacturer_name(int id);
 char *interpret_sysex(unsigned char *s, int len);
@@ -146,64 +172,39 @@ char interpret_sysex_part(unsigned char c);
 char *get_yamaha_effect_name(unsigned char effect);
 void check_midi_standard(unsigned char *data);
 const char *get_program_name(unsigned char program, unsigned char bank);
-// Linked list functions
 midi_text_t *new_midi_text(char *midi_text, int text_type, double midi_time, int track, int track_offset);
 void kill_all_midi_text(void);
 midi_sysex_t *new_midi_sysex(unsigned char *data, int length, double midi_time, int track, int track_offset, int channel);
 void kill_all_midi_sysex(void);
-// Tracks list view functions
 void InitTracksListView(HWND hwndLV);
 void FillTracksListView(HWND hwndLV);
 void SetupItemsTracksListView(HWND hwndLV);
-// Channels list view functions
 void InitChannelsListView(HWND hwndLV);
 void FillChannelsListView(HWND hwndLV);
 void SetupItemsChannelsListView(HWND hwndLV);
-// Generic list view functions
 void SetCachedLVItem(HWND hwndLV, int iItem, int column, signed int &lastval, int val);
 void SetCachedLVItem(HWND hwndLV, int iItem, int column, signed int &lastval, const char *str);
-// Sysex list view functions
 void InitSysexListView(HWND hwndLV);
 void SetupItemsSysexListView(HWND hwndLV);
-// Misc junk
 void hsv_to_rgb_int(int h, int s, int v, int &r, int &g, int &b);
 void hsv_to_rgb(float h, float s, float v, int *r, int *g, int *b);
 int get_scroll_value(WPARAM wParam, LPARAM lParam, int *i);
 const char *stristr(const char *src, const char *target);
 char *extract_filename(char *filename);
 void copy_to_clipboard(char *str);
-// Tooltip functions
 LRESULT CALLBACK GetMsgProc(int nCode, WPARAM wParam, LPARAM lParam);
 VOID OnWMNotify(LPARAM lParam);
 BOOL CALLBACK EnumChildProc(HWND hwndCtrl, LPARAM lParam);
 BOOL DoCreateDialogTooltip(void);
 void CleanupTooltip(void);
-// User interface functions
-void handle_mousedown(int x, int y, int button, int msg);
-void handle_controller_bar_click(int x, int y, int channel);
-int get_clicked_channel(int x, int y);
-void handle_controller_bar_popup(int x, int y, int channel);
-// GDI resource functions
-void init_gdi_resources(void);
-void free_gdi_resources(void);
-// Dialog callback functions
-INT_PTR CALLBACK MainDlg(HWND hDlg, UINT iMsg, WPARAM wParam, LPARAM lParam);
-INT_PTR CALLBACK TextDlg(HWND hDlg, UINT iMsg, WPARAM wParam, LPARAM lParam);
-INT_PTR CALLBACK TracksDlg(HWND hDlg, UINT iMsg, WPARAM wParam, LPARAM lParam);
-INT_PTR CALLBACK ChannelsDlg(HWND hDlg, UINT iMsg, WPARAM wParam, LPARAM lParam);
-INT_PTR CALLBACK SysexDlg(HWND hDlg, UINT iMsg, WPARAM wParam, LPARAM lParam);
-INT_PTR CALLBACK AssocDlg(HWND hDlg, UINT iMsg, WPARAM wParam, LPARAM lParam);
-INT_PTR CALLBACK GenericTextDlg(HWND hDlg, UINT iMsg, WPARAM wParam, LPARAM lParam);
-INT_PTR CALLBACK OutConfigDlg(HWND hDlg, UINT iMsg, WPARAM wParam, LPARAM lParam);
 
-static Playlist g_playlist;
-static MidiDeviceManager g_midi_device_manager;
-
-WNDPROC OldButtonProc;
+static WNDPROC OldButtonProc = NULL;
 LRESULT CALLBACK NewButtonProc(HWND hDlg, UINT iMsg, WPARAM wParam, LPARAM lParam);
 
-int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, 
-				   PSTR szCmdLine, int iCmdShow)
+
+
+// Main program dialog callback
+int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR szCmdLine, int iCmdShow)
 {
 	HWND hwnd;
 	COPYDATASTRUCT cds;
@@ -214,25 +215,25 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
 	(void)hPrevInstance;
 	(void)iCmdShow;
 
-	// Check to see if we're being called with a filename parameter
+	if (!g_midi_platform) {
+		MessageBox(NULL, "Unable to initialize MIDI platform!", "TMIDI Error", MB_ICONERROR);
+		return 1;
+	}
+
+	// Check for filename parameter and forward to existing instance if present
 	if (szCmdLine[0] && szCmdLine[0] != '/')
 	{
 		strncpy(fn, szCmdLine, sizeof(fn) - 1);
 		fn[sizeof(fn) - 1] = '\0';
-		if (fn[0] == '\"')
-			fnptr = fn + 1;
-		else
-			fnptr = fn;
+		fnptr = (fn[0] == '\"') ? fn + 1 : fn;
 		if (fnptr[strlen(fnptr) - 1] == '\"')
 			fnptr[strlen(fnptr) - 1] = '\0';
-		// Check to see if another instance of the program is running
 		hwnd = FindWindow(NULL, "NOAMi MIDI Player");
 		cds.dwData = IPC_PLAY;
 		cds.cbData = strlen(fnptr) + 1;
 		cds.lpData = fnptr;
 		if (hwnd)
 		{
-			// If so, tell that instance to play the specified file
 			SendMessage(hwnd, WM_COPYDATA, (WPARAM) hwnd, (LPARAM) &cds);
 			return 0;
 		}
@@ -240,43 +241,30 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
 			g_playlist.Add(fnptr);
 	}
 
-	// Read persisted settings
+	// Load persisted settings (JSON-backed now)
 	read_registry_settings();
 
 	// Initialize the common controls
 	InitCommonControls();
 
-	// Get the temp directory
+	// Prepare analysis file path
 	GetTempPath(sizeof(temp_dir), temp_dir);
 	strcpy(analysis_file, temp_dir);
 	strcat(analysis_file, "tmidi_analysis.txt");
 
-	// Set process priority
 	SetPriorityClass(GetCurrentProcess(), HIGH_PRIORITY_CLASS);
-
-	// Initialize high-resolution timer frequency
 	(void) HighResFrequency();
 
-	// Initialize GDI resources
 	init_gdi_resources();
 
-	// Show the main program dialog
 	DialogBox(ghInstance, MAKEINTRESOURCE(IDD_MAIN), NULL, (DLGPROC) MainDlg);
 
-	// If the MIDI-in interface is still open, close it
-	if (hin)
-		close_midi_in();
-	// If the MIDI-out interface is still open, close it
-	if (hout)
-		close_midi_out();
+	close_midi_in();
+	close_midi_out();
 
-	// Write settings to the registry
 	write_registry_settings();
 
-	// Kill the analysis file
 	unlink(analysis_file);
-
-	// Free GDI resources
 	free_gdi_resources();
 
 	return 0;
@@ -854,16 +842,15 @@ void init_midi_in(HWND hwndcb)
 		return;
 	device--;
 
-	if (MidiPlatform::OpenInput(&hin, device, (DWORD_PTR) MidiInProc, 0) != MMSYSERR_NOERROR)
+	if (!g_midi_backend.OpenInput(device, MidiInputHandler))
 	{
-		hin = NULL;
 		strcpy(msgbuf, "Unable to open MIDI-in device:\n");
 		SendMessage(hwndcb, CB_GETLBTEXT, (WPARAM) device + 1, (LPARAM) (LPCSTR) &msgbuf[strlen(msgbuf)]);
 		MessageBox(hwndApp, msgbuf, "midiInOpen() failed...", MB_ICONERROR);
 	}
-	if (hin)
+	if (g_midi_backend.HasInput())
 	{
-		MidiPlatform::StartInput(hin);
+		g_midi_backend.StartInput();
 		init_midi_out(GetDlgItem(hwndApp, IDC_MIDI_OUT));
 	}
 }
@@ -873,20 +860,16 @@ void init_midi_out(HWND hwndcb)
 	int device;
 	char msgbuf[256];
 
-	if (hout)
-	{
-		MidiPlatform::CloseOutput(hout);
-		hout = NULL;
-	}
+	if (g_midi_backend.HasOutput())
+		g_midi_backend.CloseOutput();
 
 	midi_out_cb = device = SendMessage(hwndcb, CB_GETCURSEL, 0, 0);
 	if (!device)
 		return;
 	device--;
 
-	if (MidiPlatform::OpenOutput(&hout, device) != MMSYSERR_NOERROR)
+	if (!g_midi_backend.OpenOutput(device))
 	{
-		hout = NULL;
 		strcpy(msgbuf, "Unable to open MIDI-out device:\n");
 		SendMessage(hwndcb, CB_GETLBTEXT, (WPARAM) device + 1, (LPARAM) (LPCSTR) &msgbuf[strlen(msgbuf)]);
 		MessageBox(hwndApp, msgbuf, "midiOutOpen() failed...", MB_ICONERROR);
@@ -895,32 +878,25 @@ void init_midi_out(HWND hwndcb)
 
 void close_midi_in(void)
 {
-	if (hin)
-	{
-		MidiPlatform::StopInput(hin);
-		MidiPlatform::CloseInput(hin);
-		hin = NULL;
-	}
+	if (g_midi_backend.HasInput())
+		g_midi_backend.CloseInput();
 }
 
 void close_midi_out(void)
 {
 	int i = 0;
 
-	if (hin)
+	if (g_midi_backend.HasInput())
 		return;
 
-	if (hout)
+	if (g_midi_backend.HasOutput())
 	{
 		all_notes_off();
-		MidiPlatform::ResetOutput(hout);
-		while (MidiPlatform::CloseOutput(hout) != MMSYSERR_NOERROR && i++ < 10)
+		g_midi_backend.ResetOutput();
+		while (!g_midi_backend.CloseOutput() && i++ < 10)
 			SleepMilliseconds(200);
 		if (i == 10)
-		{
 			MessageBox(hwndApp, "Unable to close MIDI-out device!", "TMIDI Error", MB_ICONERROR);
-		}
-		hout = NULL;
 	}
 }
 
@@ -959,8 +935,8 @@ void note_on(unsigned char on, unsigned char note, unsigned char velocity, unsig
 		channel = 9;
 
 	dwParam1 = MAKELONG(MAKEWORD(MAKEBYTE(channel, on ? 9 : 8), note), MAKEWORD(velocity, 0));
-	if (hout)
-		MidiPlatform::SendShortMessage(hout, dwParam1);
+	if (g_midi_backend.HasOutput())
+		g_midi_backend.SendShortMessage(dwParam1);
 }
 
 // Turns all notes off on a specific channel
@@ -969,12 +945,12 @@ void all_notes_off_channel(int channel)
 	// Clear saved note velocities for this channel
 	g_midi_state_manager.ResetChannelNotes(channel);
 	// Turn off notes on the MIDI-out device
-	if (hout)
+	if (g_midi_backend.HasOutput())
 	{
 		// Better safe than sorry!
-		MidiPlatform::SendShortMessage(hout, MAKELONG(MAKEWORD(0xB0 + channel, 120), MAKEWORD(0, 0)));
-		MidiPlatform::SendShortMessage(hout, MAKELONG(MAKEWORD(0xB0 + channel, 121), MAKEWORD(0, 0)));
-		MidiPlatform::SendShortMessage(hout, MAKELONG(MAKEWORD(0xB0 + channel, 123), MAKEWORD(0, 0)));
+		g_midi_backend.SendShortMessage(MAKELONG(MAKEWORD(0xB0 + channel, 120), MAKEWORD(0, 0)));
+		g_midi_backend.SendShortMessage(MAKELONG(MAKEWORD(0xB0 + channel, 121), MAKEWORD(0, 0)));
+		g_midi_backend.SendShortMessage(MAKELONG(MAKEWORD(0xB0 + channel, 123), MAKEWORD(0, 0)));
 	}
 }
 
@@ -987,62 +963,42 @@ void all_notes_off(void)
 		all_notes_off_channel(c);
 }
 
-void CALLBACK MidiInProc(HMIDIIN hMidiIn, UINT wMsg, DWORD dwInstance, DWORD dwParam1, DWORD dwParam2)
+void MidiInputHandler(const MidiInputMessage &message)
 {
-	(void)hMidiIn;
-	(void)dwInstance;
-	(void)dwParam2;
-	unsigned char status, byte1, byte2;
-	unsigned char event, channel;
+	if (message.type != MidiInputMessage::Type::ShortMessage)
+		return;
 
-	switch (wMsg)
+	const DWORD dwParam1 = message.shortMessage;
+	unsigned char status = LOBYTE(LOWORD(dwParam1));
+	unsigned char event = HINYBBLE(status);
+	unsigned char channel = LONYBBLE(status);
+	unsigned char byte1 = HIBYTE(LOWORD(dwParam1));
+	unsigned char byte2 = LOBYTE(HIWORD(dwParam1));
+
+	switch (event)
 	{
-		case MIM_OPEN:
-//			printf("MIDI input opened\n");
+		case 9:		// Note on
+			note_on(TRUE, byte1, byte2, channel);
 			break;
-		case MIM_CLOSE:
-//			printf("MIDI input closed\n");
+		case 0x0B:	// Controller change
+			ms.channels[channel].last_controller = byte1;
+			ms.channels[channel].last_controller_value = byte2;
+			if (byte1 == 0)
+				ms.channels[channel].last_bank = byte2;
+			g_midi_backend.SendShortMessage(dwParam1);
 			break;
-		case MIM_DATA:
-			//printf("Data: %d  Timestamp: %d\n", dwParam1, dwParam2);
-			byte1 = HIBYTE(LOWORD(dwParam1));
-			byte2 = LOBYTE(HIWORD(dwParam1));
-			status = LOBYTE(LOWORD(dwParam1));
-			event = HINYBBLE(status);
-			channel = LONYBBLE(status);
-			switch (event)
-			{
-				case 9:		// Note on
-					//printf("Note %s - note %d, velocity %d\n", byte2 ? "on" : "off", byte1, byte2);
-					note_on(TRUE, byte1, byte2, channel);
-					break;
-				case 0x0B:	// Controller change
-					ms.channels[channel].last_controller = byte1;
-					ms.channels[channel].last_controller_value = byte2;
-					if (byte1 == 0)
-						ms.channels[channel].last_bank = byte2;
-					MidiPlatform::SendShortMessage(hout, dwParam1);
-					break;
-				case 0x0C:	// Program change
-					ms.channels[channel].last_program = byte1;
-					MidiPlatform::SendShortMessage(hout, dwParam1);
-					break;
-				default:
-					//OutputDebugString("Sending data\n");
-					MidiPlatform::SendShortMessage(hout, dwParam1);
-			}
-			if (hwndChannels)
-				PostMessage(hwndChannels, WMAPP_REFRESH_CHANNELS, 0, 0);
-//			printf("Channel: %d  Event: %d  Byte1: %d  Byte2: %d\n", channel, event, byte1, byte2);
-//			send_midi_data(dwParam1);
+		case 0x0C:	// Program change
+			ms.channels[channel].last_program = byte1;
+			g_midi_backend.SendShortMessage(dwParam1);
 			break;
 		default:
-//			printf("Unknown MIDI IN message: %d - %d - %d\n", wMsg, dwParam1, dwParam2);
-			if (hout)
-				MidiPlatform::SendShortMessage(hout, dwParam1);
-//			send_midi_data(dwParam1);
+			g_midi_backend.SendShortMessage(dwParam1);
 	}
+
+	if (hwndChannels)
+		PostMessage(hwndChannels, WMAPP_REFRESH_CHANNELS, 0, 0);
 }
+
 
 int load_midi(char *filename, HWND hDlg)
 {
@@ -1984,7 +1940,7 @@ void __cdecl playback_thread(void *spointer)
 
 	// Init MIDI-out device
 	init_midi_out(GetDlgItem(hwndApp, IDC_MIDI_OUT));
-	if (!hout)
+	if (!g_midi_backend.HasOutput())
 		return;
 
 	// Set playback thread priority
@@ -2025,9 +1981,9 @@ void __cdecl playback_thread(void *spointer)
 	ms.mod_velocity = 0;
 
 	// Initialize loop count
-	ms.loop_count = 1;
+	g_midi_state_manager.SetLoopCount(1);
 
-	while (ms.loop_count--)
+	while (g_midi_state_manager.ConsumeLoopIteration())
 	{
 BeginPlayback:
 		// Initialize tempo
@@ -2310,13 +2266,13 @@ BeginPlayback:
 			break;
 		// If the looping checkbox is checked, loop another time
 		if (IsDlgButtonChecked(hwndApp, IDC_LOOP))
-			ms.loop_count++;
+			g_midi_state_manager.IncrementLoopCount();
 	}
 	// PLAYBACK HAS STOPPED
 	// Turn off all the notes, reset the MIDI-out device, and close it
 	all_notes_off();
 	SleepMilliseconds(50);
-	MidiPlatform::ResetOutput(hout);
+	g_midi_backend.ResetOutput();
 	close_midi_out();
 
 	// Reset the track info displays
@@ -2582,7 +2538,7 @@ int process_midi_event(track_header_t *th)
 				if (!ms.analyzing)
 				{
 					note_on(FALSE, d1, d2, channel);
-					//MidiPlatform::SendShortMessage(hout, MAKELONG(MAKEWORD(cmd, d1), MAKEWORD(d2, 0)));
+					//g_midi_backend.SendShortMessage(MAKELONG(MAKEWORD(cmd, d1), MAKEWORD(d2, 0)));
 					/*sprintf(buf, "Note off, d1 = %d, d2 = %d\n", d1, d2);
 					SetDlgItemText(hwndApp, IDC_FILENAME, buf);
 					OutputDebugString(buf);*/
@@ -2597,7 +2553,7 @@ int process_midi_event(track_header_t *th)
 					th->last_note_pitch = d1;
 					th->last_note_velocity = d2;
 					note_on(TRUE, d1, d2, channel);
-					//MidiPlatform::SendShortMessage(hout, MAKELONG(MAKEWORD(cmd, d1), MAKEWORD(d2, 0)));
+					//g_midi_backend.SendShortMessage(MAKELONG(MAKEWORD(cmd, d1), MAKEWORD(d2, 0)));
 					/*sprintf(buf, "Note on, d1 = %d, d2 = %d\n", d1, d2);
 					SetDlgItemText(hwndApp, IDC_FILENAME, buf);
 					OutputDebugString(buf);*/
@@ -2613,7 +2569,7 @@ int process_midi_event(track_header_t *th)
 				d1 = read_byte_mem(th);
 				d2 = read_byte_mem(th);
 				if (!ms.analyzing)
-					MidiPlatform::SendShortMessage(hout, MAKELONG(MAKEWORD(cmd, d1), MAKEWORD(d2, 0)));
+					g_midi_backend.SendShortMessage(MAKELONG(MAKEWORD(cmd, d1), MAKEWORD(d2, 0)));
 				//fprintf(outfile, "Key After-touch, note %d velocity %d\n", d1, d2);
 				break;
 			case 0x0B: // Control Change
@@ -2633,7 +2589,7 @@ int process_midi_event(track_header_t *th)
 					if (!ms.channels[channel].controller_overridden[d1])
 					{
 						ms.channels[channel].controllers[d1] = d2;			// Update controller value
-						MidiPlatform::SendShortMessage(hout, MAKELONG(MAKEWORD(cmd, d1), MAKEWORD(d2, 0)));
+						g_midi_backend.SendShortMessage(MAKELONG(MAKEWORD(cmd, d1), MAKEWORD(d2, 0)));
 					}
 				}
 				//fprintf(outfile, "Control Change, controller %d value %d\n", d1, d2);
@@ -2652,7 +2608,7 @@ int process_midi_event(track_header_t *th)
 			case 0x0D: // Channel after-touch
 				d1 = read_byte_mem(th);
 				if (!ms.analyzing)
-					MidiPlatform::SendShortMessage(hout, MAKELONG(MAKEWORD(cmd, d1), MAKEWORD(0, 0)));
+					g_midi_backend.SendShortMessage(MAKELONG(MAKEWORD(cmd, d1), MAKEWORD(0, 0)));
 				//fprintf(outfile, "Channel After-touch, channel %d\n", d1);
 				break;
 			case 0x0E: // Pitch wheel
@@ -2664,7 +2620,7 @@ int process_midi_event(track_header_t *th)
 				pitchbend |= (unsigned short) d1;
 				if (!ms.analyzing)
 				{
-					MidiPlatform::SendShortMessage(hout, MAKELONG(MAKEWORD(cmd, d1), MAKEWORD(d2, 0)));
+					g_midi_backend.SendShortMessage(MAKELONG(MAKEWORD(cmd, d1), MAKEWORD(d2, 0)));
 					ms.channels[channel].last_pitch_bend = th->last_pitch_bend = (signed int) pitchbend - MAX_PITCH_BEND;
 				}
 				else
@@ -2814,8 +2770,8 @@ void set_channel_program(int channel, int program, int bank)
 	assert(channel < 16);
 	assert(program < 128);
 
-	if (hout)
-		MidiPlatform::SendShortMessage(hout, MAKELONG(MAKEWORD(MAKEBYTE(channel, 0x0C), program), MAKEWORD(0, 0)));
+	if (g_midi_backend.HasOutput())
+		g_midi_backend.SendShortMessage(MAKELONG(MAKEWORD(MAKEBYTE(channel, 0x0C), program), MAKEWORD(0, 0)));
 
 	if (channel != 9)
 		SetDlgItemText(hwndApp, IDC_T0 + channel, get_program_name(program, bank));
@@ -2865,8 +2821,8 @@ if (i == sysex_manufacturer_names_count)
 
 void set_channel_controller(unsigned char channel, unsigned char controller, unsigned char value)
 {
-	if (hout)
-		MidiPlatform::SendShortMessage(hout, MAKELONG(MAKEWORD(MAKEBYTE(channel, 0x0B), controller), MAKEWORD(value, 0)));
+	if (g_midi_backend.HasOutput())
+		g_midi_backend.SendShortMessage(MAKELONG(MAKEWORD(MAKEBYTE(channel, 0x0B), controller), MAKEWORD(value, 0)));
 }
 
 // Updates the volume for a given note on a given channel
@@ -4146,37 +4102,15 @@ void SetupItemsSysexListView(HWND hwndLV)
 
 void output_sysex_data(unsigned char channel, unsigned char *data, int length)
 {
-	MIDIHDR mh;
-	static unsigned char *buf = (unsigned char *) malloc(256);
-	int buflen = 256;
 	(void)channel;
 
-	if (!hout)
+	if (!g_midi_backend.HasOutput() || !data || length <= 0)
 		return;
 
-	// Realloc the sysex buffer if it's too small
-	if (length + 2 > buflen)
-	{
-		buflen = length + 32;
-		buf = (unsigned char *) realloc(buf, buflen);
-	}
-
-	buf[0] = 0xF0;					// Sysex begin command
-	memcpy(buf + 1, data, length);	// Copy the sysex data into the local sysex buffer
-	
-	// Prepare the MIDI out header
-	memset(&mh, 0, sizeof(mh));
-	mh.lpData = (char *) buf;
-	mh.dwBufferLength = length + 1;
-	mh.dwBytesRecorded = length + 1;
-	// Prepare the sysex buffer for output
-	MidiPlatform::PrepareLongMessage(hout, &mh);
-
-	// Send the sysex buffer!
-	MidiPlatform::SendLongMessage(hout, &mh);
-
-	// Unprepare the sysex buffer
-	MidiPlatform::UnprepareLongMessage(hout, &mh);
+	std::vector<unsigned char> buffer(length + 1);
+	buffer[0] = 0xF0;
+	memcpy(buffer.data() + 1, data, length);
+	g_midi_backend.SendLongMessage(buffer.data(), buffer.size());
 }
 
 // Interprets a sysex string
@@ -5508,10 +5442,9 @@ const char *stristr(const char *src, const char *target)
 // Dumps the given file directly to the MIDI-out device
 int handle_sysex_dump(FILE *fp)
 {
-	MIDIHDR mh;
-	char *buf;
+	std::vector<unsigned char> buffer;
 	char text[MAX_PATH];
-	int filelen, i;
+	int filelen;
 	double startTime, endTime, timelen, speed;
 
 	// Read the file
@@ -5523,62 +5456,46 @@ int handle_sysex_dump(FILE *fp)
 		MessageBox(hwndApp, "Sysex file is empty!", "TMIDI Error", MB_ICONERROR);
 		return 1;
 	}
-	buf = (char *) malloc(filelen + 1);
-	fread(buf, filelen, 1, fp);
+	buffer.resize(filelen);
+	fread(buffer.data(), filelen, 1, fp);
 	fclose(fp);
 
 	// Open the MIDI-out device
-	if (!hout)
+	if (!g_midi_backend.HasOutput())
 		init_midi_out(GetDlgItem(hwndApp, IDC_MIDI_OUT));
-	if (!hout)
+	if (!g_midi_backend.HasOutput())
 	{
 		MessageBox(hwndApp, "Unable to open MIDI-out device for sysex dump!", "TMIDI Error", MB_ICONERROR);
 		return 1;
 	}
 
 	// Reset the MIDI-out device
-	MidiPlatform::ResetOutput(hout);
-
-	// Prepare the MIDI out header
-	memset(&mh, 0, sizeof(mh));
-	mh.lpData = buf;
-	mh.dwBufferLength = filelen;
-	mh.dwBytesRecorded = filelen;
-	// Prepare the sysex buffer for output
-	strcpy(text, "Preparing MIDI out header...");
-	SetWindowText(hwndStatusBar, text);
-	MidiPlatform::PrepareLongMessage(hout, &mh);
+	g_midi_backend.ResetOutput();
 
 	// Send the sysex buffer!
 	sprintf(text, "Sending %s (%d bytes)...", ms.filename, filelen);
 	SetWindowText(hwndStatusBar, text);
 	printf("Sending sysex data...\n");
 	startTime = GetHRTickCount();
-	MidiPlatform::SendLongMessage(hout, &mh);
+	if (!g_midi_backend.SendLongMessage(buffer.data(), buffer.size()))
+	{
+		MessageBox(hwndApp, "Failed to send sysex data!", "TMIDI Error", MB_ICONERROR);
+		return 1;
+	}
 	endTime = GetHRTickCount();
 	printf("Sent sysex data.\n");
 
-	// Unprepare the sysex buffer
-	do
-	{
-		i = MidiPlatform::UnprepareLongMessage(hout, &mh);
-		SleepMilliseconds(50);
-	} while (i == MIDIERR_STILLPLAYING);
-
 	timelen = (endTime - startTime) / 1000.0f;
 	if (timelen == 0.0f)
-		speed = 0.0f;
-	else
-		speed = (double) filelen / timelen;
-	sprintf(text, "Finished sending %s (%d bytes) in %.1f seconds (%.0f bytes per second)", 
-		extract_filename(ms.filename), filelen, timelen, speed);
+		timelen = 0.001f;
+	speed = (float) filelen / timelen;
+
+	sprintf(text, "Sent %s (%d bytes) in %.02f seconds (%.02f KB/s)", ms.filename, filelen, timelen, speed / 1024.0f);
 	SetWindowText(hwndStatusBar, text);
-
-	// Close the MIDI-out device
-	close_midi_out();
-
+	MessageBox(hwndApp, text, "Done!", MB_ICONINFORMATION);
 	return 0;
 }
+
 
 char *extract_filename(char *filename)
 {
@@ -5709,21 +5626,22 @@ INT_PTR CALLBACK OutConfigDlg(HWND hDlg, UINT iMsg, WPARAM wParam, LPARAM lParam
 						dev = devs[i];
 						SetDlgItemText(hDlg, IDC_DEV_NAME, dev->user_device_name);
 						CheckDlgButton(hDlg, IDC_USABLE, dev->usable);
-						sprintf(buf, "%d", dev->outcaps.wMid);
+						sprintf(buf, "%d", dev->manufacturer_id);
 						SetDlgItemText(hDlg, IDC_DEV_MANUFACTURER, buf);
-						sprintf(buf, "%d (driver v%d.%d)", dev->outcaps.wPid, 
-							HIBYTE(dev->outcaps.vDriverVersion), LOBYTE(dev->outcaps.vDriverVersion));
+						unsigned int version = dev->driver_version;
+						sprintf(buf, "%d (driver v%d.%d)", dev->product_id,
+							HIBYTE(LOWORD(version)), LOBYTE(LOWORD(version)));
 						SetDlgItemText(hDlg, IDC_DEV_ID, buf);
-						switch (dev->outcaps.wTechnology)
+						switch (dev->technology)
 						{
-							case MOD_MIDIPORT: strcpy(buf, "MIDI Port"); break;
-							case MOD_SYNTH: strcpy(buf, "Synthesizer"); break;
-							case MOD_SQSYNTH: strcpy(buf, "Square Wave Synthesizer"); break;
-							case MOD_FMSYNTH: strcpy(buf, "FM Synthesizer"); break;
-							case MOD_MAPPER: strcpy(buf, "MIDI Mapper"); break;
-							case 6: strcpy(buf, "Wavetable Synthesizer"); break;
-							case 7: strcpy(buf, "Software Synthesizer"); break;
-							default: sprintf(buf, "Unknown (%d)", dev->outcaps.wTechnology); break;
+							case MidiPortTechnology::MidiPort: strcpy(buf, "MIDI Port"); break;
+							case MidiPortTechnology::Synth: strcpy(buf, "Synthesizer"); break;
+							case MidiPortTechnology::SquareWaveSynth: strcpy(buf, "Square Wave Synthesizer"); break;
+							case MidiPortTechnology::FmSynth: strcpy(buf, "FM Synthesizer"); break;
+							case MidiPortTechnology::MidiMapper: strcpy(buf, "MIDI Mapper"); break;
+							case MidiPortTechnology::WavetableSynth: strcpy(buf, "Wavetable Synthesizer"); break;
+							case MidiPortTechnology::SoftwareSynth: strcpy(buf, "Software Synthesizer"); break;
+							default: sprintf(buf, "Unknown (%d)", dev->technology_raw); break;
 						}
 						SetDlgItemText(hDlg, IDC_DEV_TYPE, buf);
 						// MIDI standard flags

@@ -1,6 +1,8 @@
 // TMIDI include file
 #pragma once
 
+#include "MidiPlatform.h"
+
 #define HINYBBLE(a)		((a) >> 4)
 #define LONYBBLE(a)		((a) & 15)
 #define MAKEBYTE(l,h)	((l) | ((h) << 4))
@@ -84,9 +86,6 @@ extern RECT tracksRect;
 extern RECT channelsRect;
 extern RECT sysexRect;
 extern RECT genericTextRect;
-extern HMIDIIN hin;
-extern HMIDIOUT hout;
-
 typedef struct midi_header_t {
 	char id[4];							// MIDI header ID ("MThd")
 	unsigned int header_size;			// Size of header in bytes
@@ -204,8 +203,11 @@ typedef struct midi_device_t {
 	int standards;						// Device type flags (MT-32, GM, GS, XG)
 	char dx_device;						// Is this a DirectMusic device?
 	char input_device;					// Is this an input device?
-	MIDIINCAPS incaps;					// Input device caps
-	MIDIOUTCAPS outcaps;				// Output device caps
+	unsigned short manufacturer_id;		// Manufacturer identifier
+	unsigned short product_id;			// Product identifier
+	unsigned int driver_version;		// Driver version reported by the platform
+	unsigned short technology_raw;		// Raw technology value reported by the platform
+	MidiPortTechnology technology;		// Output technology (if applicable)
 
 	midi_device_t *next;
 } midi_device_t;

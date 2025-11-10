@@ -2,11 +2,13 @@
 
 #include <windows.h>
 
+#include "MidiPlatform.h"
+
 struct midi_device_t;
 
 class MidiDeviceManager {
 public:
-    MidiDeviceManager();
+    explicit MidiDeviceManager(MidiPlatform &platform);
     ~MidiDeviceManager();
 
     void PopulateCombos(HWND midiInCombo, HWND midiOutCombo, int midiInSelection, int midiOutSelection);
@@ -16,6 +18,7 @@ private:
     void Clear();
     void AppendDevice(midi_device_t *device);
 
+    MidiPlatform &platform_;
     midi_device_t *head_;
     midi_device_t *tail_;
 };
