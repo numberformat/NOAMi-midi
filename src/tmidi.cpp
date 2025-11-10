@@ -34,6 +34,7 @@
 #include "Playlist.h"
 #include "MidiDeviceManager.h"
 #include "MidiStateManager.h"
+#include "MidiPlatform.h"
 #include "Mt32State.h"
 #include "GdiResourceManager.h"
 #include "Threading.h"
@@ -866,7 +867,7 @@ void init_midi_in(HWND hwndcb)
 		return;
 	device--;
 
-	if (midiInOpen(&hin, device, (DWORD_PTR) MidiInProc, 0, CALLBACK_FUNCTION) != MMSYSERR_NOERROR)
+	if (MidiPlatform::OpenInput(&hin, device, (DWORD_PTR) MidiInProc, 0) != MMSYSERR_NOERROR)
 	{
 		hin = NULL;
 		strcpy(msgbuf, "Unable to open MIDI-in device:\n");
@@ -875,7 +876,7 @@ void init_midi_in(HWND hwndcb)
 	}
 	if (hin)
 	{
-		midiInStart(hin);
+		MidiPlatform::StartInput(hin);
 		init_midi_out(GetDlgItem(hwndApp, IDC_MIDI_OUT));
 	}
 }
@@ -887,7 +888,7 @@ void init_midi_out(HWND hwndcb)
 
 	if (hout)
 	{
-		midiOutClose(hout);
+		MidiPlatform::CloseOutput(hout);
 		hout = NULL;
 	}
 
@@ -896,7 +897,7 @@ void init_midi_out(HWND hwndcb)
 		return;
 	device--;
 
-	if (midiOutOpen(&hout, device, 0, 0, 0) != MMSYSERR_NOERROR)
+	if (MidiPlatform::OpenOutput(&hout, device) != MMSYSERR_NOERROR)
 	{
 		hout = NULL;
 		strcpy(msgbuf, "Unable to open MIDI-out device:\n");
@@ -909,8 +910,8 @@ void close_midi_in(void)
 {
 	if (hin)
 	{
-		midiInStop(hin);
-		midiInClose(hin);
+		MidiPlatform::StopInput(hin);
+		MidiPlatform::CloseInput(hin);
 		hin = NULL;
 	}
 }
@@ -925,8 +926,8 @@ void close_midi_out(void)
 	if (hout)
 	{
 		all_notes_off();
-		midiOutReset(hout);
-		while (midiOutClose(hout) != MMSYSERR_NOERROR && i++ < 10)
+		MidiPlatform::ResetOutput(hout);
+		while (MidiPlatform::CloseOutput(hout) != MMSYSERR_NOERROR && i++ < 10)
 			SleepMilliseconds(200);
 		if (i == 10)
 		{
@@ -973,7 +974,7 @@ void note_on(unsigned char on, unsigned char note, unsigned char velocity, unsig
 
 	dwParam1 = MAKELONG(MAKEWORD(MAKEBYTE(channel, on ? 9 : 8), note), MAKEWORD(velocity, 0));
 	if (hout)
-		midiOutShortMsg(hout, dwParam1);
+		MidiPlatform::SendShortMessage(hout, dwParam1);
 }
 
 // Turns all notes off on a specific channel
@@ -986,9 +987,9 @@ void all_notes_off_channel(int channel)
 	if (hout)
 	{
 		// Better safe than sorry!
-		midiOutShortMsg(hout, MAKELONG(MAKEWORD(0xB0 + channel, 120), MAKEWORD(0, 0)));
-		midiOutShortMsg(hout, MAKELONG(MAKEWORD(0xB0 + channel, 121), MAKEWORD(0, 0)));
-		midiOutShortMsg(hout, MAKELONG(MAKEWORD(0xB0 + channel, 123), MAKEWORD(0, 0)));
+		MidiPlatform::SendShortMessage(hout, MAKELONG(MAKEWORD(0xB0 + channel, 120), MAKEWORD(0, 0)));
+		MidiPlatform::SendShortMessage(hout, MAKELONG(MAKEWORD(0xB0 + channel, 121), MAKEWORD(0, 0)));
+		MidiPlatform::SendShortMessage(hout, MAKELONG(MAKEWORD(0xB0 + channel, 123), MAKEWORD(0, 0)));
 	}
 }
 
@@ -1035,15 +1036,15 @@ void CALLBACK MidiInProc(HMIDIIN hMidiIn, UINT wMsg, DWORD dwInstance, DWORD dwP
 					ms.channels[channel].last_controller_value = byte2;
 					if (byte1 == 0)
 						ms.channels[channel].last_bank = byte2;
-					midiOutShortMsg(hout, dwParam1);
+					MidiPlatform::SendShortMessage(hout, dwParam1);
 					break;
 				case 0x0C:	// Program change
 					ms.channels[channel].last_program = byte1;
-					midiOutShortMsg(hout, dwParam1);
+					MidiPlatform::SendShortMessage(hout, dwParam1);
 					break;
 				default:
 					//OutputDebugString("Sending data\n");
-					midiOutShortMsg(hout, dwParam1);
+					MidiPlatform::SendShortMessage(hout, dwParam1);
 			}
 			if (hwndChannels)
 				PostMessage(hwndChannels, WMAPP_REFRESH_CHANNELS, 0, 0);
@@ -1053,7 +1054,7 @@ void CALLBACK MidiInProc(HMIDIIN hMidiIn, UINT wMsg, DWORD dwInstance, DWORD dwP
 		default:
 //			printf("Unknown MIDI IN message: %d - %d - %d\n", wMsg, dwParam1, dwParam2);
 			if (hout)
-				midiOutShortMsg(hout, dwParam1);
+				MidiPlatform::SendShortMessage(hout, dwParam1);
 //			send_midi_data(dwParam1);
 	}
 }
@@ -2330,7 +2331,7 @@ BeginPlayback:
 	// Turn off all the notes, reset the MIDI-out device, and close it
 	all_notes_off();
 	SleepMilliseconds(50);
-	midiOutReset(hout);
+	MidiPlatform::ResetOutput(hout);
 	close_midi_out();
 
 	// Reset the track info displays
@@ -2596,7 +2597,7 @@ int process_midi_event(track_header_t *th)
 				if (!ms.analyzing)
 				{
 					note_on(FALSE, d1, d2, channel);
-					//midiOutShortMsg(hout, MAKELONG(MAKEWORD(cmd, d1), MAKEWORD(d2, 0)));
+					//MidiPlatform::SendShortMessage(hout, MAKELONG(MAKEWORD(cmd, d1), MAKEWORD(d2, 0)));
 					/*sprintf(buf, "Note off, d1 = %d, d2 = %d\n", d1, d2);
 					SetDlgItemText(hwndApp, IDC_FILENAME, buf);
 					OutputDebugString(buf);*/
@@ -2611,7 +2612,7 @@ int process_midi_event(track_header_t *th)
 					th->last_note_pitch = d1;
 					th->last_note_velocity = d2;
 					note_on(TRUE, d1, d2, channel);
-					//midiOutShortMsg(hout, MAKELONG(MAKEWORD(cmd, d1), MAKEWORD(d2, 0)));
+					//MidiPlatform::SendShortMessage(hout, MAKELONG(MAKEWORD(cmd, d1), MAKEWORD(d2, 0)));
 					/*sprintf(buf, "Note on, d1 = %d, d2 = %d\n", d1, d2);
 					SetDlgItemText(hwndApp, IDC_FILENAME, buf);
 					OutputDebugString(buf);*/
@@ -2627,7 +2628,7 @@ int process_midi_event(track_header_t *th)
 				d1 = read_byte_mem(th);
 				d2 = read_byte_mem(th);
 				if (!ms.analyzing)
-					midiOutShortMsg(hout, MAKELONG(MAKEWORD(cmd, d1), MAKEWORD(d2, 0)));
+					MidiPlatform::SendShortMessage(hout, MAKELONG(MAKEWORD(cmd, d1), MAKEWORD(d2, 0)));
 				//fprintf(outfile, "Key After-touch, note %d velocity %d\n", d1, d2);
 				break;
 			case 0x0B: // Control Change
@@ -2647,7 +2648,7 @@ int process_midi_event(track_header_t *th)
 					if (!ms.channels[channel].controller_overridden[d1])
 					{
 						ms.channels[channel].controllers[d1] = d2;			// Update controller value
-						midiOutShortMsg(hout, MAKELONG(MAKEWORD(cmd, d1), MAKEWORD(d2, 0)));
+						MidiPlatform::SendShortMessage(hout, MAKELONG(MAKEWORD(cmd, d1), MAKEWORD(d2, 0)));
 					}
 				}
 				//fprintf(outfile, "Control Change, controller %d value %d\n", d1, d2);
@@ -2666,7 +2667,7 @@ int process_midi_event(track_header_t *th)
 			case 0x0D: // Channel after-touch
 				d1 = read_byte_mem(th);
 				if (!ms.analyzing)
-					midiOutShortMsg(hout, MAKELONG(MAKEWORD(cmd, d1), MAKEWORD(0, 0)));
+					MidiPlatform::SendShortMessage(hout, MAKELONG(MAKEWORD(cmd, d1), MAKEWORD(0, 0)));
 				//fprintf(outfile, "Channel After-touch, channel %d\n", d1);
 				break;
 			case 0x0E: // Pitch wheel
@@ -2678,7 +2679,7 @@ int process_midi_event(track_header_t *th)
 				pitchbend |= (unsigned short) d1;
 				if (!ms.analyzing)
 				{
-					midiOutShortMsg(hout, MAKELONG(MAKEWORD(cmd, d1), MAKEWORD(d2, 0)));
+					MidiPlatform::SendShortMessage(hout, MAKELONG(MAKEWORD(cmd, d1), MAKEWORD(d2, 0)));
 					ms.channels[channel].last_pitch_bend = th->last_pitch_bend = (signed int) pitchbend - MAX_PITCH_BEND;
 				}
 				else
@@ -2841,7 +2842,7 @@ void set_channel_program(int channel, int program, int bank)
 	assert(program < 128);
 
 	if (hout)
-		midiOutShortMsg(hout, MAKELONG(MAKEWORD(MAKEBYTE(channel, 0x0C), program), MAKEWORD(0, 0)));
+		MidiPlatform::SendShortMessage(hout, MAKELONG(MAKEWORD(MAKEBYTE(channel, 0x0C), program), MAKEWORD(0, 0)));
 
 	if (channel != 9)
 		SetDlgItemText(hwndApp, IDC_T0 + channel, get_program_name(program, bank));
@@ -2892,7 +2893,7 @@ if (i == sysex_manufacturer_names_count)
 void set_channel_controller(unsigned char channel, unsigned char controller, unsigned char value)
 {
 	if (hout)
-		midiOutShortMsg(hout, MAKELONG(MAKEWORD(MAKEBYTE(channel, 0x0B), controller), MAKEWORD(value, 0)));
+		MidiPlatform::SendShortMessage(hout, MAKELONG(MAKEWORD(MAKEBYTE(channel, 0x0B), controller), MAKEWORD(value, 0)));
 }
 
 // Updates the volume for a given note on a given channel
@@ -4337,13 +4338,13 @@ void output_sysex_data(unsigned char channel, unsigned char *data, int length)
 	mh.dwBufferLength = length + 1;
 	mh.dwBytesRecorded = length + 1;
 	// Prepare the sysex buffer for output
-	midiOutPrepareHeader(hout, &mh, sizeof(mh));
+	MidiPlatform::PrepareLongMessage(hout, &mh);
 
 	// Send the sysex buffer!
-	midiOutLongMsg(hout, &mh, sizeof(mh));
+	MidiPlatform::SendLongMessage(hout, &mh);
 
 	// Unprepare the sysex buffer
-	midiOutUnprepareHeader(hout, &mh, sizeof(mh));
+	MidiPlatform::UnprepareLongMessage(hout, &mh);
 }
 
 // Interprets a sysex string
@@ -5704,7 +5705,7 @@ int handle_sysex_dump(FILE *fp)
 	}
 
 	// Reset the MIDI-out device
-	midiOutReset(hout);
+	MidiPlatform::ResetOutput(hout);
 
 	// Prepare the MIDI out header
 	memset(&mh, 0, sizeof(mh));
@@ -5714,21 +5715,21 @@ int handle_sysex_dump(FILE *fp)
 	// Prepare the sysex buffer for output
 	strcpy(text, "Preparing MIDI out header...");
 	SetWindowText(hwndStatusBar, text);
-	midiOutPrepareHeader(hout, &mh, sizeof(mh));
+	MidiPlatform::PrepareLongMessage(hout, &mh);
 
 	// Send the sysex buffer!
 	sprintf(text, "Sending %s (%d bytes)...", ms.filename, filelen);
 	SetWindowText(hwndStatusBar, text);
 	printf("Sending sysex data...\n");
 	startTime = GetHRTickCount();
-	midiOutLongMsg(hout, &mh, sizeof(mh));
+	MidiPlatform::SendLongMessage(hout, &mh);
 	endTime = GetHRTickCount();
 	printf("Sent sysex data.\n");
 
 	// Unprepare the sysex buffer
 	do
 	{
-		i = midiOutUnprepareHeader(hout, &mh, sizeof(mh));
+		i = MidiPlatform::UnprepareLongMessage(hout, &mh);
 		SleepMilliseconds(50);
 	} while (i == MIDIERR_STILLPLAYING);
 

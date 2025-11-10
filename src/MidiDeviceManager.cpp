@@ -1,4 +1,5 @@
 #include "MidiDeviceManager.h"
+#include "MidiPlatform.h"
 
 #include <mmsystem.h>
 #include <stdlib.h>
@@ -20,10 +21,10 @@ void MidiDeviceManager::PopulateCombos(HWND midiInCombo, HWND midiOutCombo, int 
         SendMessage(midiInCombo, CB_ADDSTRING, 0, (LPARAM) "[None]");
     }
 
-    const int indevs = midiInGetNumDevs();
+    const int indevs = MidiPlatform::GetInputDeviceCount();
     for (int i = 0; i < indevs; i++) {
         MIDIINCAPS incaps;
-        if (midiInGetDevCaps(i, &incaps, sizeof(incaps)) != MMSYSERR_NOERROR)
+        if (MidiPlatform::GetInputDeviceCaps(i, &incaps) != MMSYSERR_NOERROR)
             continue;
 
         midi_device_t *dev = (midi_device_t *) calloc(1, sizeof(midi_device_t));
@@ -55,10 +56,10 @@ void MidiDeviceManager::PopulateCombos(HWND midiInCombo, HWND midiOutCombo, int 
         SendMessage(midiOutCombo, CB_ADDSTRING, 0, (LPARAM) "[None]");
     }
 
-    const int outdevs = midiOutGetNumDevs();
+    const int outdevs = MidiPlatform::GetOutputDeviceCount();
     for (int i = 0; i < outdevs; i++) {
         MIDIOUTCAPS outcaps;
-        if (midiOutGetDevCaps(i, &outcaps, sizeof(outcaps)) != MMSYSERR_NOERROR)
+        if (MidiPlatform::GetOutputDeviceCaps(i, &outcaps) != MMSYSERR_NOERROR)
             continue;
 
         midi_device_t *dev = (midi_device_t *) calloc(1, sizeof(midi_device_t));
