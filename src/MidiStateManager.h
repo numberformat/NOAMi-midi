@@ -19,6 +19,12 @@ public:
     bool IsChannelMuted(int channel) const;
 
     void SetModVelocity(int value);
+    void ResetModVelocity();
+
+    void SetChannelLock(int channel, bool locked);
+    void SetChannelDisplayedController(int channel, int controller);
+    int  ChannelDisplayedController(int channel) const;
+    void MarkChannelDrawn(int channel);
 
 private:
     midi_state_t &state_;

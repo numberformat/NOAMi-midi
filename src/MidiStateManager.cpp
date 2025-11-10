@@ -9,6 +9,7 @@ midi_state_t &MidiStateManager::State() {
 void MidiStateManager::ResetForNewSong() {
     state_.uses_percussion = 0;
     state_.highest_pitch_bend = 0;
+    state_.perform_analysis = 0;
     ResetChannelOverrides();
     ResetModulation();
 }
@@ -45,4 +46,32 @@ bool MidiStateManager::IsChannelMuted(int channel) const {
 
 void MidiStateManager::SetModVelocity(int value) {
     state_.mod_velocity = value;
+}
+
+void MidiStateManager::ResetModVelocity() {
+    state_.mod_velocity = 0;
+}
+
+void MidiStateManager::SetChannelLock(int channel, bool locked) {
+    if (channel < 0 || channel >= 16)
+        return;
+    state_.channels[channel].lock_controller = locked ? 1 : 0;
+}
+
+void MidiStateManager::SetChannelDisplayedController(int channel, int controller) {
+    if (channel < 0 || channel >= 16)
+        return;
+    state_.channels[channel].displayed_controller = controller;
+}
+
+int MidiStateManager::ChannelDisplayedController(int channel) const {
+    if (channel < 0 || channel >= 16)
+        return -1;
+    return state_.channels[channel].displayed_controller;
+}
+
+void MidiStateManager::MarkChannelDrawn(int channel) {
+    if (channel < 0 || channel >= 16)
+        return;
+    state_.channels[channel].drawn = 1;
 }

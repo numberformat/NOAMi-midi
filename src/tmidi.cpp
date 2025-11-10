@@ -3588,7 +3588,7 @@ void set_mod_velocity(signed int i)
 {
 	char buf[256];
 
-	ms.mod_velocity = i;
+	g_midi_state_manager.SetModVelocity(i);
 	SendDlgItemMessage(hwndApp, IDC_VELOCITY_SLIDER, TBM_SETPOS, TRUE, 64 + i);
 	sprintf(buf, "Velocity: %d", i);
 	SetDlgItemText(hwndApp, IDC_VELOCITY, buf);
@@ -3596,40 +3596,27 @@ void set_mod_velocity(signed int i)
 
 void set_channel_mute(int channel, int mute)
 {
-	unsigned char vel, note, was_muted;
+	unsigned char vel, note;
 	HWND hwnd = GetDlgItem(hwndApp, IDC_C0 + channel);
 
-//	style = GetWindowLong(hwnd, GWL_STYLE);
-
-	was_muted = ms.channels[channel].muted;
-	ms.channels[channel].muted = mute;
+	const int was_muted = g_midi_state_manager.IsChannelMuted(channel);
+	g_midi_state_manager.SetChannelMute(channel, mute != 0);
 
 	if (mute)
 	{
-		// Mute the channel
 		all_notes_off_channel(channel);
-//		style |= SS_SUNKEN;
 	}
-	else
+	else if (channel != 9 && was_muted)
 	{
-		// Unmute the channel
-
-		// Restore any notes that should be playing (unless this is the percussion channel)
-		if (channel != 9 && was_muted)
-			for (note = 0; note < 128; note++)
-			{
-				vel = ms.channels[channel].notes[note];
-				if (vel)
-					note_on(TRUE, note, vel, channel);
-			}
-		// Change the channel text
-//		style &= ~SS_SUNKEN;
+		for (note = 0; note < 128; note++)
+		{
+			vel = ms.channels[channel].notes[note];
+			if (vel)
+				note_on(TRUE, note, vel, channel);
+		}
 	}
 
 	SendMessage(hwnd, BM_SETCHECK, (WPARAM) mute, 0);
-	//SetWindowLong(hwnd, GWL_STYLE, style);
-	//SetWindowPos(hwnd, NULL, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOOWNERZORDER | SWP_NOSIZE | SWP_DRAWFRAME);
-	//InvalidateRect(hwnd, NULL, TRUE);
 }
 
 void set_channel_solo(int channel)
@@ -3638,7 +3625,7 @@ void set_channel_solo(int channel)
 
 	already_soloed = 1;
 	for (i = 0; i < 16; i++)
-		if (!ms.channels[i].muted && i != channel)
+		if (!g_midi_state_manager.IsChannelMuted(i) && i != channel)
 			already_soloed = 0;
 
 	if (already_soloed)
