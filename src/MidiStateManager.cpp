@@ -1,5 +1,7 @@
 #include "MidiStateManager.h"
 
+#include <cstring>
+
 MidiStateManager::MidiStateManager(midi_state_t &state) : state_(state) {}
 
 midi_state_t &MidiStateManager::State() {
@@ -96,4 +98,78 @@ int MidiStateManager::ControllerValue(int channel, int controller) const {
     if (controller < 0 || controller >= 128)
         return -1;
     return state_.channels[channel].controllers[controller];
+}
+
+void MidiStateManager::SetPlaying(bool playing) {
+    state_.playing = playing ? 1 : 0;
+}
+
+bool MidiStateManager::IsPlaying() const {
+    return state_.playing != 0;
+}
+
+void MidiStateManager::SetPaused(bool paused) {
+    state_.paused = paused ? 1 : 0;
+}
+
+bool MidiStateManager::IsPaused() const {
+    return state_.paused != 0;
+}
+
+void MidiStateManager::RequestStop() {
+    state_.stop_requested = 1;
+}
+
+void MidiStateManager::ClearStopRequest() {
+    state_.stop_requested = 0;
+}
+
+bool MidiStateManager::StopRequested() const {
+    return state_.stop_requested != 0;
+}
+
+void MidiStateManager::SetFinishedNaturally(bool finished) {
+    state_.finished_naturally = finished ? 1 : 0;
+}
+
+bool MidiStateManager::FinishedNaturally() const {
+    return state_.finished_naturally != 0;
+}
+
+void MidiStateManager::SetLastNote(int channel, unsigned char pitch, unsigned char velocity) {
+    if (channel < 0 || channel >= 16)
+        return;
+    state_.channels[channel].last_note_pitch = static_cast<signed char>(pitch);
+    state_.channels[channel].last_note_velocity = static_cast<signed char>(velocity);
+}
+
+void MidiStateManager::UpdateNoteVolume(int channel, int note, unsigned char volume) {
+    if (channel < 0 || channel >= 16)
+        return;
+    if (note < 0 || note >= 128)
+        return;
+    unsigned char &slot = state_.channels[channel].notes[note];
+    if (volume)
+    {
+        if (!slot)
+            state_.channels[channel].note_count++;
+    }
+    else
+    {
+        if (slot)
+            state_.channels[channel].note_count--;
+    }
+    slot = volume;
+}
+
+void MidiStateManager::ResetChannelNotes(int channel) {
+    if (channel < 0 || channel >= 16)
+        return;
+    memset(state_.channels[channel].notes, 0, sizeof(state_.channels[channel].notes));
+    state_.channels[channel].note_count = 0;
+}
+
+void MidiStateManager::ResetAllChannelNotes() {
+    for (int channel = 0; channel < 16; ++channel)
+        ResetChannelNotes(channel);
 }

@@ -472,7 +472,7 @@ INT_PTR CALLBACK MainDlg(HWND hDlg, UINT iMsg, WPARAM wParam, LPARAM lParam)
 				const std::string *currentFile = g_playlist.CurrentFilename();
 				if (currentFile && !strcmp(currentFile->c_str(), ms.filename))
 				{
-					if (ms.finished_naturally && g_playlist.AdvanceCurrent())
+					if (g_midi_state_manager.FinishedNaturally() && g_playlist.AdvanceCurrent())
 						PostMessage(hDlg, WMAPP_LOADFILE, 0, 0);
 				}
 				else
@@ -481,9 +481,9 @@ INT_PTR CALLBACK MainDlg(HWND hDlg, UINT iMsg, WPARAM wParam, LPARAM lParam)
 			break;
 
 		case WMAPP_LOADFILE:
-			if (ms.playing)
+			if (g_midi_state_manager.IsPlaying())
 			{
-				ms.stop_requested = 1;
+				g_midi_state_manager.RequestStop();
 				break;
 			}
 			if (g_playlist.HasCurrent())
@@ -743,26 +743,26 @@ INT_PTR CALLBACK MainDlg(HWND hDlg, UINT iMsg, WPARAM wParam, LPARAM lParam)
 				case IDC_PLAY:
 					if (HIWORD(wParam) == BN_CLICKED)
 					{
-						if (!(ms.playing) && ms.filename[0])
+						if (!(g_midi_state_manager.IsPlaying()) && ms.filename[0])
 							StartThread(playback_thread, NULL);
-						else if (ms.paused)
-							ms.paused = 0;
+						else if (g_midi_state_manager.IsPaused())
+							g_midi_state_manager.SetPaused(false);
 					}
 					break;
 				case IDC_STOP:
 					if (HIWORD(wParam) == BN_CLICKED)
-						ms.stop_requested = 1;
+						g_midi_state_manager.RequestStop();
 					break;
 				case IDC_PAUSE:
 					if (HIWORD(wParam) == BN_CLICKED)
-						ms.paused = !(ms.paused);
+						g_midi_state_manager.SetPaused(!g_midi_state_manager.IsPaused());
 					break;
 				case IDM_FILE_OPEN:
 				case IDC_OPEN:
 					if (HIWORD(wParam) == BN_CLICKED)
 					{
-						if (ms.playing)
-							ms.stop_requested = 1;
+						if (g_midi_state_manager.IsPlaying())
+							g_midi_state_manager.RequestStop();
 						// Get the filename from the user with the common open file dialog
 						ZeroMemory(&ofn, sizeof(OPENFILENAME));
 						ofn.lStructSize = sizeof(OPENFILENAME);
@@ -960,11 +960,10 @@ void note_on(unsigned char on, unsigned char note, unsigned char velocity, unsig
 
 	// Update display/historic values
 	update_note_volume(channel, note, on ? velocity : 0);
-	ms.channels[channel].last_note_pitch = note;
-	ms.channels[channel].last_note_velocity = velocity;
+	g_midi_state_manager.SetLastNote(channel, note, velocity);
 
 	// Don't actually play the note if this channel is muted
-	if (ms.channels[channel].muted)
+	if (g_midi_state_manager.IsChannelMuted(channel))
 		return;
 
 	// If the bank for this channel is 127, treat it as a percussive channel! (XG)
@@ -981,8 +980,7 @@ void note_on(unsigned char on, unsigned char note, unsigned char velocity, unsig
 void all_notes_off_channel(int channel)
 {
 	// Clear saved note velocities for this channel
-	memset(&ms.channels[channel].notes, 0, 128);
-	ms.channels[channel].note_count = 0;
+	g_midi_state_manager.ResetChannelNotes(channel);
 	// Turn off notes on the MIDI-out device
 	if (hout)
 	{
@@ -1747,7 +1745,7 @@ int analyze_midi(void)
 
 	// Initialize playback parameters
 	ms.midi_standard = MIDI_STANDARD_NONE;
-	ms.stop_requested = 0;
+	g_midi_state_manager.ClearStopRequest();
 	//set_tempo(50000 / 1000);
 	ms.tempo = 500000 / 1000;
 	ms.tick_length = (double) ms.tempo / (double) mh.num_ticks;
@@ -1797,19 +1795,19 @@ int analyze_midi(void)
 
 	// Loop until we've been asked to stop
 	first_pass = 1;
-	while (!ms.stop_requested)
+	while (!g_midi_state_manager.StopRequested())
 	{
 		// Schedule the next "wakeup time" MAX_MIDI_WAIT milliseconds into the future
 		nexttrigger = curtime + MAX_MIDI_WAIT;
 		// See if any tracks have pending data
-		ms.stop_requested = 1;
+		g_midi_state_manager.RequestStop();
 		for (i = 0; i < tracks; i++)
 		{
 			// Continue on to the next track if this track is disabled
 			if (!th[i].enabled)
 				continue;
 			else
-				ms.stop_requested = 0;
+				g_midi_state_manager.ClearStopRequest();
 
 			// Read the next event's delta time
 			if (first_pass)
@@ -2056,10 +2054,10 @@ BeginPlayback:
 		num_events = 0;
 		//ms.analyzing = 0;
 		ms.analyzing = ms.seeking;
-		ms.playing = 1;
-		ms.paused = 0;
-		ms.finished_naturally = FALSE;
-		ms.stop_requested = 0;
+		g_midi_state_manager.SetPlaying(true);
+		g_midi_state_manager.SetPaused(false);
+		g_midi_state_manager.SetFinishedNaturally(false);
+		g_midi_state_manager.ClearStopRequest();
 		ms.tempo = 500000 / 1000;
 		ms.tick_length = (double) ms.tempo / (double) mh.num_ticks;
 		ms.peak_polyphony = 0;
@@ -2117,7 +2115,7 @@ BeginPlayback:
 
 		// Loop until we've been asked to stop
 		first_pass = 1;
-		while (!ms.stop_requested)
+		while (!g_midi_state_manager.StopRequested())
 		{
 			// See if we've been asked to seek and we're not already doing it
 			if (ms.seeking && !seeking)
@@ -2164,7 +2162,7 @@ BeginPlayback:
 					ms.curtime = curtime;
 					if (process_midi_event(&th[i]))
 					{
-						ms.stop_requested = 1;
+						g_midi_state_manager.RequestStop();
 						break;
 					}
 					// Increment the global number of events processed, and the number of events for this track
@@ -2197,7 +2195,7 @@ BeginPlayback:
 			sprintf(buf, "%.1f", nexttrigger);
 			SetDlgItemText(hwndApp, IDC_TRIGGER_TIME, buf);*/
 			// Check to see if a pause has been requested
-			if (ms.paused)
+			if (g_midi_state_manager.IsPaused())
 			{
 				// Turn off the notes being played
 				all_notes_off();
@@ -2207,11 +2205,11 @@ BeginPlayback:
 				while (1)
 				{
 					SleepMilliseconds(100);
-					if (!(ms.paused) || !(ms.playing) || ms.stop_requested)
+					if (!(g_midi_state_manager.IsPaused()) || !(g_midi_state_manager.IsPlaying()) || g_midi_state_manager.StopRequested())
 						break;
 				}
 				// If we've been asked to stop.. break from the main playback loop
-				if (!(ms.playing) || ms.stop_requested)
+				if (!(g_midi_state_manager.IsPlaying()) || g_midi_state_manager.StopRequested())
 					break;
 				// We need to resume.  Correct the start and trigger times to be up-to-date!
 				curtime = GetHRTickCount();
@@ -2297,7 +2295,7 @@ BeginPlayback:
 			else
 			{
 				//i = 0;
-				while (curtime < nexttrigger && !(ms.stop_requested))
+				while (curtime < nexttrigger && !(g_midi_state_manager.StopRequested()))
 				{
 #ifdef _DEBUG
 					sprintf(buf, "Sleeping for %d s\n", (int) (nexttrigger - curtime));
@@ -2321,7 +2319,7 @@ BeginPlayback:
 			}
 		}
 		// Break out of looping if a stop was requested
-		if (ms.stop_requested)
+		if (g_midi_state_manager.StopRequested())
 			break;
 		// If the looping checkbox is checked, loop another time
 		if (IsDlgButtonChecked(hwndApp, IDC_LOOP))
@@ -2379,7 +2377,7 @@ BeginPlayback:
 	EnableWindow(GetDlgItem(hwndApp, IDC_PAUSE), FALSE);
 	EnableWindow(GetDlgItem(hwndApp, IDC_STOP), FALSE);
 
-	ms.playing = 0;
+	g_midi_state_manager.SetPlaying(false);
 	PostMessage(hwndApp, WMAPP_DONE_PLAYING, 0, 0);
 }
 
@@ -2901,20 +2899,7 @@ void update_note_volume(char channel, char note, char volume)
 {
 	const unsigned int channel_index = static_cast<unsigned char>(channel);
 	const unsigned int note_index = static_cast<unsigned char>(note);
-	if (volume)
-	{
-		// Note on
-		if (!(ms.channels[channel_index].notes[note_index]))
-			ms.channels[channel_index].note_count++;
-	}
-	else
-	{
-		// Note off
-		if (ms.channels[channel_index].notes[note_index])
-			ms.channels[channel_index].note_count--;
-	}
-	// Store the value
-	ms.channels[channel_index].notes[note_index] = volume;
+	g_midi_state_manager.UpdateNoteVolume(channel_index, note_index, volume);
 	//SendDlgItemMessage(hwndApp, IDC_TVU0 + channel, WM_USER + 9, 0, RGB(rand() % 256, rand() % 256, rand() % 256));
 	//SendDlgItemMessage(hwndApp, IDC_TVU0 + channel, PBM_SETPOS, (WPARAM) note, 0);
 }
@@ -5973,7 +5958,7 @@ void handle_controller_bar_click(int x, int y, int channel)
 	(void)y;
 
 	// Ya?  Woohoo!  Do something!
-	if (ms.playing)
+	if (g_midi_state_manager.IsPlaying())
 	{
 		// Get the displayed controller
 		c = g_midi_state_manager.ChannelDisplayedController(channel);

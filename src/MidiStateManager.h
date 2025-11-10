@@ -30,6 +30,21 @@ public:
     void SetControllerValue(int channel, int controller, int value);
     int ControllerValue(int channel, int controller) const;
 
+    void SetPlaying(bool playing);
+    bool IsPlaying() const;
+    void SetPaused(bool paused);
+    bool IsPaused() const;
+    void RequestStop();
+    void ClearStopRequest();
+    bool StopRequested() const;
+    void SetFinishedNaturally(bool finished);
+    bool FinishedNaturally() const;
+
+    void SetLastNote(int channel, unsigned char pitch, unsigned char velocity);
+    void UpdateNoteVolume(int channel, int note, unsigned char volume);
+    void ResetChannelNotes(int channel);
+    void ResetAllChannelNotes();
+
 private:
     midi_state_t &state_;
 };
