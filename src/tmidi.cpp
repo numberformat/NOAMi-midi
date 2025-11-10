@@ -34,6 +34,7 @@
 #include "resource.h"
 #include "Playlist.h"
 #include "MidiDeviceManager.h"
+#include "MidiStateManager.h"
 #include "Mt32State.h"
 #include "GdiResourceManager.h"
 
@@ -94,6 +95,7 @@ midi_state_t ms;
 midi_text_t *midi_text_events = NULL;
 midi_sysex_t *midi_sysex_events = NULL;
 static GdiResourceManager g_gdi_resources;
+static MidiStateManager g_midi_state_manager(ms);
 static Mt32State g_mt32_state;
 
 // Function prototypes
@@ -1100,21 +1102,7 @@ int load_midi(char *filename, HWND hDlg)
 		th = NULL;
 	}
 
-	// Reset percussion flag
-	ms.uses_percussion = 0;
-
-	// Reset highest pitch bend value to zero
-	ms.highest_pitch_bend = 0;
-
-	// Reset channel states
-	for (i = 0; i < 16; i++)
-	{
-		ms.channels[i].program_overridden = 0;
-		ms.channels[i].muted = 0;
-	}
-
-	// Decide whether or not to perform pre-analysis
-	ms.perform_analysis = 0;
+	g_midi_state_manager.ResetForNewSong();
 
 	if (ms.perform_analysis)
 	{
