@@ -22,6 +22,7 @@ public:
     void ResetModVelocity();
 
     void SetChannelLock(int channel, bool locked);
+    bool IsChannelLocked(int channel) const;
     void SetChannelDisplayedController(int channel, int controller);
     int  ChannelDisplayedController(int channel) const;
     void MarkChannelDrawn(int channel);

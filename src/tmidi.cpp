@@ -5944,7 +5944,7 @@ void handle_mousedown(int x, int y, int button, int msg)
 			if (i != -1)
 			{
 				// Remember whether or not this channel had its controller locked...
-				channel_was_locked = ms.channels[i].lock_controller;
+				channel_was_locked = g_midi_state_manager.IsChannelLocked(i);
 				// Remember this channel...
 				handle_controller_bar_click(x, y, i);
 			}
@@ -5955,7 +5955,7 @@ void handle_mousedown(int x, int y, int button, int msg)
 			// If this channel's controller wasn't locked when the user first clicked on it,
 			// unlock it now... since we locked it in handle_controller_bar_click()
 			if (channel_clicked != -1 && !channel_was_locked)
-				ms.channels[channel_clicked].lock_controller = 0;
+				g_midi_state_manager.SetChannelLock(channel_clicked, false);
 			break;
 
 		case WM_RBUTTONUP:
@@ -5981,11 +5981,11 @@ void handle_controller_bar_click(int x, int y, int channel)
 	if (ms.playing)
 	{
 		// Get the displayed controller
-		c = ms.channels[channel].displayed_controller;
+		c = g_midi_state_manager.ChannelDisplayedController(channel);
 		if (c != -1)
 		{
 			// Lock the controller value so it doesn't change while the user is playing with it!
-			ms.channels[channel].lock_controller = 1;
+			g_midi_state_manager.SetChannelLock(channel, true);
 			// Calculate the new value based on where the mouse is along the bar
 			v = (x - BAR_X) * 127 / BAR_WIDTH;
 			// Make sure the new value is within bounds
@@ -5998,7 +5998,7 @@ void handle_controller_bar_click(int x, int y, int channel)
 			// Output the control change
 			set_channel_controller(channel, c, v);
 			// Update the display for this channel
-			ms.channels[channel].drawn = 1;
+			g_midi_state_manager.MarkChannelDrawn(channel);
 			update_display(NULL);
 		}
 	}

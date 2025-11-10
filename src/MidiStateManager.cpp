@@ -58,6 +58,12 @@ void MidiStateManager::SetChannelLock(int channel, bool locked) {
     state_.channels[channel].lock_controller = locked ? 1 : 0;
 }
 
+bool MidiStateManager::IsChannelLocked(int channel) const {
+    if (channel < 0 || channel >= 16)
+        return false;
+    return state_.channels[channel].lock_controller != 0;
+}
+
 void MidiStateManager::SetChannelDisplayedController(int channel, int controller) {
     if (channel < 0 || channel >= 16)
         return;
