@@ -662,7 +662,7 @@ INT_PTR CALLBACK MainDlg(HWND hDlg, UINT iMsg, WPARAM wParam, LPARAM lParam)
 				channel = LOWORD(wParam) - IDC_C0;
 				switch (HIWORD(wParam))
 				{
-					case BN_CLICKED:
+						case BN_CLICKED:
 						set_channel_mute(channel, !ms.channels[channel].muted);
 						SetFocus(GetDlgItem(hDlg, IDC_STOP));
 						break;
